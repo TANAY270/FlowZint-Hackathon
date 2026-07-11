@@ -6,7 +6,7 @@ AI-powered customer care assistant built for FAIC 2026 Hackathon. Resolves custo
 
 | Role | Name |
 |------|------|
-| Team Leader | Ayaan |
+| Member | Ayaan |
 | Member | Soham |
 | Member | Tanay |
 | Member | Nishtha |
