@@ -1,0 +1,64 @@
+{
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "lookup_order",
+        "description": "Retrieves the current status, items, and shipping details of a customer's order. Use this whenever the user asks about an order or a delivery.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "order_id": {
+              "type": "string",
+              "description": "The unique alphanumeric ID of the order (e.g., ORD-12345)."
+            }
+          },
+          "required": ["order_id"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "initiate_refund",
+        "description": "Starts the refund process for an order. Only call this if the user explicitly requests a refund and you have verified the order exists.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "order_id": {
+              "type": "string",
+              "description": "The order ID to be refunded."
+            },
+            "reason": {
+              "type": "string",
+              "description": "The reason for the refund, summarized from the user's message."
+            }
+          },
+          "required": ["order_id", "reason"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "escalate_to_human",
+        "description": "Escalates the conversation to a human support agent. Use this if the user is extremely angry, explicitly asks for a human, or if you cannot resolve their issue with the available tools.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "issue_summary": {
+              "type": "string",
+              "description": "A concise summary of what the user is trying to achieve and why they are frustrated."
+            },
+            "urgency": {
+              "type": "string",
+              "enum": ["low", "medium", "high", "critical"],
+              "description": "The urgency level based on the user's sentiment."
+            }
+          },
+          "required": ["issue_summary", "urgency"]
+        }
+      }
+    }
+  ]
+}
