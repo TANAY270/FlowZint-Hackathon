@@ -3,14 +3,14 @@
     {
       "type": "function",
       "function": {
-        "name": "lookup_order",
-        "description": "Retrieves the current status, items, and shipping details of a customer's order. Use this whenever the user asks about an order or a delivery.",
+        "name": "track_order",
+        "description": "Get real-time tracking information for a specific order using the Order ID.",
         "parameters": {
           "type": "object",
           "properties": {
             "order_id": {
               "type": "string",
-              "description": "The unique alphanumeric ID of the order (e.g., ORD-12345)."
+              "description": "The order identifier, e.g., '54321' or '1042'."
             }
           },
           "required": ["order_id"]
@@ -20,18 +20,18 @@
     {
       "type": "function",
       "function": {
-        "name": "initiate_refund",
-        "description": "Starts the refund process for an order. Only call this if the user explicitly requests a refund and you have verified the order exists.",
+        "name": "process_refund",
+        "description": "Initiate a refund for an order. Use when customer explicitly requests a refund.",
         "parameters": {
           "type": "object",
           "properties": {
             "order_id": {
               "type": "string",
-              "description": "The order ID to be refunded."
+              "description": "The order identifier."
             },
             "reason": {
               "type": "string",
-              "description": "The reason for the refund, summarized from the user's message."
+              "description": "The reason given by the customer for the refund."
             }
           },
           "required": ["order_id", "reason"]
@@ -42,21 +42,16 @@
       "type": "function",
       "function": {
         "name": "escalate_to_human",
-        "description": "Escalates the conversation to a human support agent. Use this if the user is extremely angry, explicitly asks for a human, or if you cannot resolve their issue with the available tools.",
+        "description": "Transfer to a live human agent when the customer is frustrated, asks for a human, or the issue cannot be resolved.",
         "parameters": {
           "type": "object",
           "properties": {
-            "issue_summary": {
+            "reason": {
               "type": "string",
-              "description": "A concise summary of what the user is trying to achieve and why they are frustrated."
-            },
-            "urgency": {
-              "type": "string",
-              "enum": ["low", "medium", "high", "critical"],
-              "description": "The urgency level based on the user's sentiment."
+              "description": "Summary of why the conversation is being escalated."
             }
           },
-          "required": ["issue_summary", "urgency"]
+          "required": ["reason"]
         }
       }
     }

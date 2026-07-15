@@ -1,5 +1,7 @@
 const { Groq } = require('groq-sdk');
-const { toolsDefinition, executeTool } = require('./tools/mockTools');
+const { toolsDefinition, executeTool, mockOrders } = require('./tools/mockTools');
+const { generateSystemPrompt } = require('../../ai_core/prompts');
+
 
 let groq = null;
 if (process.env.GROQ_API_KEY) {
@@ -18,102 +20,257 @@ function getSessionHistory(sessionId) {
   return memoryStore[sessionId];
 }
 
+function getSessionMeta(sessionId) {
+  if (!memoryStore[sessionId]) {
+    memoryStore[sessionId] = [];
+  }
+  if (!memoryStore[sessionId].meta) {
+    memoryStore[sessionId].meta = {
+      unresolvedAttempts: 0,
+      lastIntent: null,
+      pendingConfirmation: null 
+    };
+  }
+  return memoryStore[sessionId].meta;
+}
+
+function detectIntent(message) {
+  const m = message.toLowerCase();
+  if (m.includes('refund') || m.includes('money back') || m.includes('cancel')) return 'refund';
+  if (m.includes('track') || m.includes('where') || m.includes('status') || m.includes('package')) return 'tracking';
+  if (m.includes('human') || m.includes('agent') || m.includes('person') || m.includes('manager') || m.includes('representative')) return 'escalate';
+  return 'general';
+}
+
+function cleanResponse(text) {
+  if (!text) return text;
+  return text
+    .replace(/<function=[\w]+>[\s\S]*?(?:<\/function>|$)/gm, '') // standard format
+    .replace(/\{[\s\S]*?"order_id"[\s\S]*?\}"?/g, '')            // catches trailing " too
+    .replace(/```[\s\S]*?```/g, '')                               // code blocks
+    .replace(/\n{3,}/g, '\n\n')                                   // clean up extra newlines
+    .trim();
+}
+
 function calculateSentiment(message) {
-  const lowercase = message.toLowerCase();
-  const negativeWords = ['terrible', 'bad', 'worst', 'hate', 'furious', 'angry', 'sucks', 'stupid', 'useless', 'human', 'agent', 'person', 'manager'];
-  const positiveWords = ['great', 'awesome', 'good', 'thank', 'perfect', 'nice', 'appreciate'];
-  
-  let score = 0.5; // neutral default
-  
-  negativeWords.forEach(word => {
-    if (lowercase.includes(word)) score -= 0.15;
-  });
-  positiveWords.forEach(word => {
-    if (lowercase.includes(word)) score += 0.15;
-  });
-  
-  // Cap between 0 and 1
+  const m = message.toLowerCase();
+
+  const negativeStrong = [
+    'terrible', 'worst', 'hate', 'furious', 'useless', 'pathetic',
+    'ridiculous', 'disgusting', 'awful', 'horrible', 'scam', 'fraud'
+  ];
+  const negativeMild = [
+    'bad', 'angry', 'annoyed', 'frustrated', 'upset', 'disappointed',
+    'tired', 'waiting', 'slow', 'late', 'delay', 'wrong', 'broken',
+    'not working', 'still', 'again', 'already', 'never', 'unacceptable',
+    'ridiculous', 'issue', 'problem', 'error', 'failed', 'missing'
+  ];
+  const positive = [
+    'great', 'awesome', 'good', 'thank', 'perfect', 'nice',
+    'appreciate', 'excellent', 'happy', 'satisfied', 'love', 'wonderful'
+  ];
+
+  // Caps lock = yelling = frustration signal
+  const capsRatio = (message.match(/[A-Z]/g) || []).length / (message.length || 1);
+  const isYelling = capsRatio > 0.4 && message.length > 4;
+
+  // Exclamation marks = frustration
+  const exclamations = (message.match(/!/g) || []).length;
+
+  let score = 0.6; // start slightly positive (neutral customer)
+
+  negativeStrong.forEach(w => { if (m.includes(w)) score -= 0.2; });
+  negativeMild.forEach(w => {  if (m.includes(w)) score -= 0.1; });
+  positive.forEach(w => {      if (m.includes(w)) score += 0.12; });
+
+  if (isYelling)    score -= 0.2;
+  if (exclamations >= 2) score -= 0.1;
+
   return Math.max(0, Math.min(1, score));
 }
 
 async function processMessage(sessionId, userMessage) {
   const history = getSessionHistory(sessionId);
   const sentiment = calculateSentiment(userMessage);
-  
+  const meta = getSessionMeta(sessionId);
+
+  // ── CONFIRMATION INTERCEPT ──────────────────────────────────────────────
+  if (meta.pendingConfirmation) {
+    const { orderId, reason } = meta.pendingConfirmation;
+    const isYes = /\b(yes|yeah|yep|sure|confirm|ok|okay|proceed|do it|go ahead|yup)\b/i.test(userMessage);
+    const isNo  = /\b(no|nope|cancel|don't|stop|nevermind|never mind)\b/i.test(userMessage);
+
+    if (isYes) {
+      meta.pendingConfirmation = null;
+      const result = await executeTool('process_refund', { order_id: orderId, reason });
+      const order = mockOrders[orderId];
+      const responseText = result.success
+        ? `Done! I've processed a full refund of $${order?.price || ''} for your ${order?.item || 'order'} (Order #${orderId}). You should see it in your account within 2-3 business days.`
+        : `I wasn't able to process that refund. ${result.error}`;
+      history.push({ role: 'user', content: userMessage });
+      history.push({ role: 'assistant', content: responseText });
+      return {
+        response: responseText,
+        sentiment,
+        toolExecuted: 'process_refund',
+        toolStatus: result.success ? 'Success' : 'Failed',
+        escalated: false,
+        escalationReason: null
+      };
+    }
+
+    if (isNo) {
+      meta.pendingConfirmation = null;
+      const responseText = "No problem, I've cancelled the refund request. Is there anything else I can help you with?";
+      history.push({ role: 'user', content: userMessage });
+      history.push({ role: 'assistant', content: responseText });
+      return {
+        response: responseText,
+        sentiment,
+        toolExecuted: null,
+        toolStatus: null,
+        escalated: false,
+        escalationReason: null
+      };
+    }
+
+    // Unclear response — ask again
+    const responseText = `Just to confirm — would you like me to process a full refund for Order #${orderId}? Please reply yes or no.`;
+    history.push({ role: 'user', content: userMessage });
+    history.push({ role: 'assistant', content: responseText });
+    return {
+      response: responseText,
+      sentiment,
+      toolExecuted: null,
+      toolStatus: null,
+      escalated: false,
+      escalationReason: null
+    };
+  }
+  // ── END CONFIRMATION INTERCEPT ──────────────────────────────────────────
+
   // Append user message to history
   history.push({ role: 'user', content: userMessage });
-  if (history.length > 12) {
-    history.shift(); // keep sliding window
-  }
+  if (history.length > 12) history.shift();
 
   let finalResponseText = '';
   let toolExecuted = null;
   let toolStatus = null;
   let escalated = false;
 
-  // 1. REAL LLM MODE
+  // ── 1. REAL LLM MODE ────────────────────────────────────────────────────
   if (groq) {
     try {
       const systemMessage = {
         role: 'system',
-        content: `You are a competent AI customer care agent for Flowzint. You resolve queries, trigger actions when requested using tools, and escalate to a human only when confidence is low or the user is frustrated. Use the tools provided when the user requests tracking information or refunds. Be helpful, clear, and request clarification if details (like order ID) are missing.`
+        content: generateSystemPrompt({
+          userName: "Customer",
+          recentOrders: Object.values(mockOrders).map(o => ({
+            id: o.order_id,
+            items: [o.item],
+            status: o.status
+          })),
+          sentimentScore: sentiment * 10,
+          unresolvedAttempts: meta?.unresolvedAttempts || 0
+        })
       };
 
       const messages = [systemMessage, ...history];
 
-      const completion = await groq.chat.completions.create({
+      let completion = await groq.chat.completions.create({
         model: 'llama-3.1-8b-instant',
-        messages: messages,
+        messages,
         tools: toolsDefinition,
         tool_choice: 'auto',
         temperature: 0.3
       });
 
-      const responseMessage = completion.choices[0].message;
+      let responseMessage = completion.choices[0].message;
 
-      // Handle tool calls
+      // ── RETRY: LLM wrote function syntax in plain text instead of tool_calls
+      if (!responseMessage.tool_calls && responseMessage.content?.includes('<function=')) {
+        const retryCompletion = await groq.chat.completions.create({
+          model: 'llama-3.1-8b-instant',
+          messages: [
+            systemMessage,
+            ...history,
+            {
+              role: 'user',
+              content: '[SYSTEM: You wrote a tool call as plain text. Use the proper tool_calls API mechanism instead. Retry now.]'
+            }
+          ],
+          tools: toolsDefinition,
+          tool_choice: 'auto',
+          temperature: 0.1
+        });
+        responseMessage = retryCompletion.choices[0].message;
+      }
+
+      // ── TOOL CALL HANDLER ────────────────────────────────────────────────
       if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
         const toolCall = responseMessage.tool_calls[0];
         const name = toolCall.function.name;
         const args = JSON.parse(toolCall.function.arguments);
 
-        toolExecuted = name;
-        const result = await executeTool(name, args);
-        toolStatus = result.success ? 'Success' : 'Failed';
-        
-        if (result.escalated) {
-          escalated = true;
+        // ── REFUND CONFIRMATION GATE ───────────────────────────────────────
+        // Intercept process_refund — ask for confirmation instead of executing
+        if (name === 'process_refund') {
+          meta.pendingConfirmation = {
+            orderId: args.order_id,
+            reason: args.reason || 'Customer requested refund'
+          };
+          const order = mockOrders[args.order_id];
+          const price = order ? `$${order.price}` : 'the full amount';
+          const item  = order ? order.item : `Order #${args.order_id}`;
+          finalResponseText = `Can you confirm you'd like a full refund of ${price} for your ${item} (Order #${args.order_id})?`;
+          toolExecuted = null; // not executed yet
+          toolStatus = null;
+
+        } else {
+          // ── ALL OTHER TOOLS: execute normally ──────────────────────────
+          toolExecuted = name;
+          const result = await executeTool(name, args);
+          toolStatus = result.success ? 'Success' : 'Failed';
+
+          if (result.escalated) escalated = true;
+
+          const updatedMessages = [
+            systemMessage,
+            ...history,
+            responseMessage,
+            {
+              role: 'tool',
+              tool_call_id: toolCall.id,
+              name,
+              content: JSON.stringify(result) +
+                "\n\nIMPORTANT: You now have all the data you need. Do NOT call any more tools. Write your final response using only this data. Use exact values — exact dates, prices, statuses. No vague language."
+            }
+          ];
+
+          const finalCompletion = await groq.chat.completions.create({
+            model: 'llama-3.1-8b-instant',
+            messages: updatedMessages,
+            temperature: 0.2
+          });
+
+          finalResponseText = cleanResponse(finalCompletion.choices[0].message.content);
         }
 
-        // Send tool results back to LLM for final response grounding
-        const updatedMessages = [
-          systemMessage,
-          ...history,
-          responseMessage,
-          {
-            role: 'tool',
-            tool_call_id: toolCall.id,
-            name: name,
-            content: JSON.stringify(result)
-          }
-        ];
-
-        const finalCompletion = await groq.chat.completions.create({
-          model: 'llama-3.1-8b-instant',
-          messages: updatedMessages
-        });
-
-        finalResponseText = finalCompletion.choices[0].message.content;
       } else {
-        finalResponseText = responseMessage.content;
+        // ── NO TOOL CALL ──────────────────────────────────────────────────
+        finalResponseText = cleanResponse(responseMessage.content);
       }
+
     } catch (error) {
       console.error("Error in real LLM completion:", error);
-      finalResponseText = "I'm having trouble connecting to my cognitive services. Let me fall back to automatic local response: " + (await simulateLocalResponse(userMessage, history)).responseText;
+      const fallback = await simulateLocalResponse(userMessage, history);
+      finalResponseText = cleanResponse(
+        "I'm having trouble connecting to my cognitive services. Let me fall back to automatic local response: " + fallback.responseText
+      );
     }
-  } 
-  // 2. SIMULATED MODE (NO API KEY / FALLBACK)
-  else {
+
+  // ── 2. SIMULATED MODE ────────────────────────────────────────────────────
+  } else {
     const simulation = await simulateLocalResponse(userMessage, history);
     finalResponseText = simulation.responseText;
     toolExecuted = simulation.toolExecuted;
@@ -124,12 +281,38 @@ async function processMessage(sessionId, userMessage) {
   // Push assistant response to history
   history.push({ role: 'assistant', content: finalResponseText });
 
+  // ── UNRESOLVED ATTEMPTS COUNTER ──────────────────────────────────────────
+  const currentIntent = detectIntent(userMessage);
+
+  if (toolExecuted && toolExecuted !== 'escalate_to_human') {
+    meta.unresolvedAttempts = 0;
+    meta.lastIntent = null;
+  } else if (currentIntent === meta.lastIntent && !toolExecuted) {
+    meta.unresolvedAttempts += 1;
+  } else {
+    meta.unresolvedAttempts = 0;
+    meta.lastIntent = currentIntent;
+  }
+
+  // ── THREE-RULE ESCALATION ENGINE ─────────────────────────────────────────
+  const sentimentTriggered = sentiment < 0.3;
+  const loopTriggered      = meta.unresolvedAttempts >= 2;
+  const explicitRequest    = detectIntent(userMessage) === 'escalate';
+  const shouldEscalate     = escalated || sentimentTriggered || loopTriggered || explicitRequest;
+
+  const escalationReason = escalated         ? 'tool_triggered'
+                         : sentimentTriggered ? 'low_sentiment'
+                         : loopTriggered      ? 'loop_detected'
+                         : explicitRequest    ? 'user_requested'
+                         : null;
+
   return {
     response: finalResponseText,
-    sentiment: sentiment,
-    toolExecuted: toolExecuted,
-    toolStatus: toolStatus,
-    escalated: escalated || sentiment < 0.3
+    sentiment,
+    toolExecuted,
+    toolStatus,
+    escalated: shouldEscalate,
+    escalationReason
   };
 }
 

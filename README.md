@@ -99,3 +99,21 @@ npm run dev
 - [ ] Sentiment/escalation logic
 - [ ] Frontend polish + demo flow
 - [ ] Test cases + edge case handling
+
+
+## How the AI Works
+
+### Agent Loop
+Every message goes through a tool-calling loop — the LLM decides whether to answer directly or call a tool (`track_order`, `process_refund`, `escalate_to_human`). Tool results are injected back into LLM context so responses are grounded in real data, not hallucinated.
+
+### Code-Level Refund Gate (Novel)
+Refund confirmation is handled in Node.js, not the prompt. When the LLM calls `process_refund`, the orchestrator intercepts it, stores it as `pendingConfirmation`, and asks the user to confirm. Only after a "yes" does it execute. This makes confirmation 100% reliable regardless of LLM behavior.
+
+### Escalation Engine
+Three independent rules evaluated after every message:
+- **Low sentiment** — score drops below 0.3
+- **Loop detected** — same intent repeated 2+ turns with no resolution
+- **Explicit request** — user asks for a human
+
+### Sentiment Scoring
+Scored 0–1 per message using keyword weights, caps lock ratio, and exclamation count. Passed into the system prompt so the LLM adapts its tone in real time. Falls below 0.3 → escalation triggers automatically.
