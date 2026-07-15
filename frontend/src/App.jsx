@@ -1,44 +1,65 @@
 import React, { useState, useEffect, useRef } from 'react';
+import ChatMessage from './components/ChatMessage';
+import ConfirmationCard from './components/ConfirmationCard';
+import LoadingIndicator from './components/LoadingIndicator';
+import SentimentGauge from './components/SentimentGauge';
+import AgentDashboard from './components/AgentDashboard';
+import ToolLog from './components/ToolLog';
+import DatabaseExplorer from './components/DatabaseExplorer';
 
 const API_BASE = 'http://localhost:5000/api';
 
+/** Determine a context-specific loading message based on the user's text. */
+function detectLoadingPhase(text) {
+  const lower = text.toLowerCase();
+  if (lower.includes('refund') || lower.includes('return') || lower.includes('money back'))
+    return '💳 Processing refund request...';
+  if (lower.includes('track') || lower.includes('where') || lower.includes('status'))
+    return '🔍 Searching order records...';
+  if (lower.includes('human') || lower.includes('agent') || lower.includes('manager') || lower.includes('person'))
+    return '🤝 Connecting to support specialist...';
+  return '💬 Thinking...';
+}
+
 export default function App() {
+  // ── State ──────────────────────────────────────────────
   const [sessionId] = useState(() => 'sess_' + Math.random().toString(36).substr(2, 9));
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
-      content: 'Hello! I am your Flowzint AI customer care assistant. How can I help you today? You can ask me to track your orders or request a refund.',
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    }
+      content:
+        "Hello! I'm your Flowzint AI assistant. I can help you track orders, process refunds, or connect you with a specialist. How can I help?",
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    },
   ]);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(false);
-  const [sentiment, setSentiment] = useState(0.5); // 0 to 1
+  const [loadingPhase, setLoadingPhase] = useState('💬 Thinking...');
+  const [sentiment, setSentiment] = useState(0.5);
+  const [sentimentHistory, setSentimentHistory] = useState([0.5]);
   const [escalated, setEscalated] = useState(false);
   const [toolLogs, setToolLogs] = useState([]);
   const [orders, setOrders] = useState({});
+  const [pendingConfirmation, setPendingConfirmation] = useState(null);
+  const [showAgentDashboard, setShowAgentDashboard] = useState(false);
 
   const messagesEndRef = useRef(null);
 
-  // Auto-scroll to bottom of chat
+  // ── Effects ────────────────────────────────────────────
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, loading]);
+  }, [messages, loading, pendingConfirmation]);
 
-  // Fetch initial orders database state from backend
   const fetchOrders = async () => {
     try {
       const res = await fetch(`${API_BASE}/orders`);
-      if (res.ok) {
-        const data = await res.json();
-        setOrders(data);
-      }
+      if (res.ok) setOrders(await res.json());
     } catch (err) {
-      console.error("Failed to fetch mock database state:", err);
+      console.error('Failed to fetch orders:', err);
     }
   };
 
@@ -46,56 +67,46 @@ export default function App() {
     fetchOrders();
   }, []);
 
-  // Send message to server
-  const handleSendMessage = async (textToSend) => {
-    const text = textToSend || inputText;
-    if (!text.trim()) return;
-
-    if (!textToSend) setInputText('');
-
-    // Append user message
-    const userMsg = {
-      role: 'user',
-      content: text,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    };
-    setMessages(prev => [...prev, userMsg]);
+  // ── API Call (no user-message handling) ─────────────────
+  const callAPI = async (text) => {
+    setLoadingPhase(detectLoadingPhase(text));
     setLoading(true);
 
     try {
       const res = await fetch(`${API_BASE}/chat`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          sessionId,
-          message: text
-        })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId, message: text }),
       });
 
       if (!res.ok) throw new Error('Network response error');
-
       const data = await res.json();
 
-      // Log tool executions if they occurred
+      // Record tool execution in sidebar log
       if (data.toolExecuted) {
         setToolLogs(prev => [
           {
             tool: data.toolExecuted,
             status: data.toolStatus,
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+            timestamp: new Date().toLocaleTimeString([], {
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+            }),
           },
-          ...prev
+          ...prev,
         ]);
-        // Refresh database visualizer state
         fetchOrders();
       }
 
       setSentiment(data.sentiment);
-      if (data.escalated) setEscalated(true);
+      setSentimentHistory(prev => [...prev, data.sentiment]);
 
-      // Append assistant response
+      if (data.escalated) {
+        setEscalated(true);
+        setShowAgentDashboard(true);
+      }
+
       setMessages(prev => [
         ...prev,
         {
@@ -103,8 +114,9 @@ export default function App() {
           content: data.response,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           tool: data.toolExecuted,
-          toolStatus: data.toolStatus
-        }
+          toolStatus: data.toolStatus,
+          toolData: data.toolData,
+        },
       ]);
     } catch (err) {
       console.error(err);
@@ -112,207 +124,270 @@ export default function App() {
         ...prev,
         {
           role: 'assistant',
-          content: 'Sorry, I encountered an error connecting to the orchestrator. Please make sure the backend is running.',
+          content:
+            'Sorry, I encountered an error connecting to the server. Please ensure the backend is running on port 5000.',
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          error: true
-        }
+          error: true,
+        },
       ]);
     } finally {
       setLoading(false);
     }
   };
 
+  // ── User-Facing Send Handler ───────────────────────────
+  const handleSendMessage = async (textToSend) => {
+    const text = textToSend || inputText;
+    if (!text.trim()) return;
+    if (!textToSend) setInputText('');
+
+    const userMsg = {
+      role: 'user',
+      content: text,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    };
+    setMessages(prev => [...prev, userMsg]);
+
+    // Two-phase refund gate: intercept refund requests that mention a known order
+    const lower = text.toLowerCase();
+    if (lower.includes('refund') && !pendingConfirmation) {
+      const orderMatch = text.match(/\b(\d{4,5})\b/);
+      if (orderMatch && orders[orderMatch[1]] && !orders[orderMatch[1]].refunded) {
+        setPendingConfirmation({
+          orderId: orderMatch[1],
+          order: orders[orderMatch[1]],
+          originalMessage: text,
+        });
+        return; // pause — don't call API until user confirms
+      }
+    }
+
+    await callAPI(text);
+  };
+
+  // ── Confirmation Handlers ──────────────────────────────
+  const handleConfirmRefund = async () => {
+    if (!pendingConfirmation) return;
+    const msg = pendingConfirmation.originalMessage;
+    setPendingConfirmation(null);
+    await callAPI(msg);
+  };
+
+  const handleCancelRefund = () => {
+    setPendingConfirmation(null);
+    setMessages(prev => [
+      ...prev,
+      {
+        role: 'assistant',
+        content:
+          'No problem — the refund request has been cancelled. Is there anything else I can help you with?',
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      },
+    ]);
+  };
+
   const handleKeyPress = (e) => {
-    if (e.key === 'Enter') handleSendMessage();
+    if (e.key === 'Enter' && !e.shiftKey) handleSendMessage();
   };
 
-  // Helper to determine sentiment color
-  const getSentimentDetails = () => {
-    if (sentiment > 0.6) return { text: 'Positive', color: 'text-green-400', bg: 'bg-green-500/10', border: 'border-green-500/30' };
-    if (sentiment < 0.4) return { text: 'Frustrated / Urgent', color: 'text-red-400', bg: 'bg-red-500/10', border: 'border-red-500/30' };
-    return { text: 'Neutral', color: 'text-slate-300', bg: 'bg-slate-500/10', border: 'border-slate-500/30' };
+  const handleResolveTicket = () => {
+    setEscalated(false);
+    setShowAgentDashboard(false);
+    setMessages(prev => [
+      ...prev,
+      {
+        role: 'assistant',
+        content:
+          'The support ticket has been marked as resolved by a specialist. Thank you for your patience — is there anything else I can help with?',
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      },
+    ]);
   };
 
-  const sentimentDetails = getSentimentDetails();
+  // ── Dynamic Suggested Prompts ──────────────────────────
+  const getSuggestedPrompts = () => {
+    if (escalated) return [];
 
-  const suggestedPrompts = [
-    { text: "Track Order #54321", prompt: "Where is my order #54321?" },
-    { text: "Refund Order #1042", prompt: "I want to request a refund for order #1042." },
-    { text: "Speak to human", prompt: "Connect me to a manager immediately, I am having issues." }
-  ];
+    const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant');
 
+    if (lastAssistant?.tool === 'track_order') {
+      return [
+        {
+          text: 'Request refund',
+          prompt: `I'd like a refund for order #${lastAssistant.toolData?.order_id || ''}`,
+        },
+        { text: 'Track another order', prompt: 'Can you track a different order for me?' },
+        { text: 'Speak to a human', prompt: "I'd like to speak with a human representative please." },
+      ];
+    }
+
+    if (lastAssistant?.tool === 'process_refund') {
+      return [
+        { text: 'Check another order', prompt: 'Can you check on my other orders?' },
+        { text: 'I have a question', prompt: 'I have another question about my account.' },
+      ];
+    }
+
+    return [
+      { text: 'Track Order #54321', prompt: 'Where is my order #54321?' },
+      { text: 'Refund Order #1042', prompt: 'I want to request a refund for order #1042.' },
+      {
+        text: 'Speak to a human',
+        prompt: 'I need to speak with a support representative immediately.',
+      },
+    ];
+  };
+
+  const suggestedPrompts = getSuggestedPrompts();
+
+  // ── Render ─────────────────────────────────────────────
   return (
-    <div className="flex h-screen bg-[#070b13] text-slate-100 overflow-hidden">
-      {/* LEFT SIDEBAR: Agent Metrics & Diagnostics */}
-      <div className="w-80 border-r border-slate-800 bg-[#0c1220]/80 p-6 flex flex-col gap-6">
+    <div className="flex h-screen bg-[#080c14] text-slate-100 overflow-hidden">
+      {/* ─── LEFT SIDEBAR ─── */}
+      <div className="w-72 border-r border-slate-800/40 bg-[#0a0f1a]/90 p-5 flex flex-col gap-5 shrink-0">
+        {/* Session */}
         <div>
-          <h2 className="text-sm font-semibold tracking-wider uppercase text-slate-400 mb-1">Active Session</h2>
+          <h2 className="text-[10px] font-semibold tracking-wider uppercase text-slate-600 mb-1.5">
+            Session
+          </h2>
           <div className="flex items-center gap-2">
-            <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse"></span>
-            <code className="text-xs text-indigo-300 select-all">{sessionId}</code>
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            <code className="text-[11px] text-indigo-300/80 select-all font-mono">
+              {sessionId}
+            </code>
           </div>
         </div>
 
-        {/* Sentiment Gauge */}
-        <div className="p-4 rounded-xl border bg-slate-900/50 border-slate-800/80">
-          <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Live Sentiment Monitor</h3>
-          <div className="flex justify-between items-center mb-1.5">
-            <span className={`text-sm font-bold ${sentimentDetails.color}`}>{sentimentDetails.text}</span>
-            <span className="text-xs text-slate-500">Score: {(sentiment * 10).toFixed(1)}/10</span>
-          </div>
-          <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
-            <div 
-              className={`h-full transition-all duration-500 ${sentiment < 0.4 ? 'bg-red-500' : sentiment > 0.6 ? 'bg-green-500' : 'bg-slate-400'}`} 
-              style={{ width: `${sentiment * 100}%` }}
-            ></div>
-          </div>
-        </div>
+        {/* Sentiment */}
+        <SentimentGauge sentiment={sentiment} history={sentimentHistory} />
 
-        {/* Escalation Status */}
-        <div className={`p-4 rounded-xl border transition-all duration-300 ${
-          escalated 
-            ? 'bg-red-500/10 border-red-500/30' 
-            : 'bg-indigo-500/5 border-indigo-500/10'
-        }`}>
-          <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Human Handoff Trigger</h3>
+        {/* Escalation status */}
+        <div
+          className={`glass-card p-3 transition-all duration-300 ${
+            escalated ? 'border-red-500/30' : ''
+          }`}
+        >
+          <h3 className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+            Routing Status
+          </h3>
           {escalated ? (
-            <div className="flex flex-col gap-1.5">
-              <span className="text-sm text-red-400 font-bold flex items-center gap-1.5">
-                ⚠️ ESCALATED TO LIVE QUEUE
+            <div className="flex flex-col gap-1">
+              <span className="text-xs text-red-400 font-bold flex items-center gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse" />
+                ESCALATED
               </span>
-              <p className="text-xs text-slate-400">
-                A human agent is reviewing the summarized chat context. Direct response pipeline is active.
+              <p className="text-[10px] text-slate-500 leading-relaxed">
+                Transferred to human agent queue. Chat context has been forwarded.
               </p>
             </div>
           ) : (
-            <div className="flex flex-col gap-1.5">
-              <span className="text-sm text-indigo-300 font-medium">🤖 Under AI Management</span>
-              <p className="text-xs text-slate-500">
-                Confidence is high. System is successfully resolving customer intent.
+            <div className="flex flex-col gap-1">
+              <span className="text-xs text-indigo-300 font-medium">AI-Managed</span>
+              <p className="text-[10px] text-slate-600 leading-relaxed">
+                Confidence sufficient. No escalation triggers detected.
               </p>
             </div>
           )}
         </div>
 
-        {/* Tool Execution Logs */}
+        {/* Tool logs */}
         <div className="flex-1 flex flex-col min-h-0">
-          <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Tool Execution Log</h3>
-          <div className="flex-1 overflow-y-auto pr-1 flex flex-col gap-2">
+          <h3 className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-2">
+            Tool Execution Log
+          </h3>
+          <div className="flex-1 overflow-y-auto flex flex-col gap-2 pr-0.5">
             {toolLogs.length === 0 ? (
-              <p className="text-xs text-slate-600 italic">No tools triggered yet in this session.</p>
+              <p className="text-[11px] text-slate-700 italic">No tool calls in this session.</p>
             ) : (
-              toolLogs.map((log, i) => (
-                <div key={i} className="text-xs p-2.5 rounded-lg bg-slate-900/60 border border-slate-800/80 flex flex-col gap-1">
-                  <div className="flex justify-between items-center font-mono">
-                    <span className="text-indigo-400 font-bold">{log.tool}()</span>
-                    <span className={`px-1.5 py-0.5 rounded text-[10px] ${
-                      log.status === 'Success' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
-                    }`}>
-                      {log.status}
-                    </span>
-                  </div>
-                  <span className="text-[10px] text-slate-500">{log.timestamp}</span>
-                </div>
-              ))
+              toolLogs.map((log, i) => <ToolLog key={i} log={log} />)
             )}
           </div>
         </div>
       </div>
 
-      {/* CENTER: Chat Interface */}
-      <div className="flex-1 flex flex-col bg-[#0b0f19]">
+      {/* ─── CENTER: CHAT ─── */}
+      <div className="flex-1 flex flex-col bg-[#0b0f18] min-w-0">
         {/* Header */}
-        <div className="h-16 border-b border-slate-800 bg-[#0c1220]/60 flex items-center justify-between px-8">
+        <div className="h-14 border-b border-slate-800/30 bg-[#0a0f1a]/40 flex items-center justify-between px-6 shrink-0">
           <div className="flex items-center gap-3">
-            <div className="h-8 w-8 rounded-lg bg-indigo-600 flex items-center justify-center font-bold text-white shadow-md">
+            <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center font-bold text-white text-xs shadow-lg shadow-indigo-500/20">
               FZ
             </div>
             <div>
-              <h1 className="text-sm font-bold text-slate-100">Customer Support Assistant</h1>
-              <p className="text-xs text-indigo-400">Context-Aware AI Agent</p>
+              <h1 className="text-sm font-semibold text-slate-100">Flowzint Support</h1>
+              <p className="text-[10px] text-slate-500">AI-Powered Customer Care</p>
             </div>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            <span className="text-[10px] text-slate-500">Online</span>
           </div>
         </div>
 
-        {/* Messages Pane */}
-        <div className="flex-1 overflow-y-auto p-8 space-y-6">
+        {/* Messages pane */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-4">
           {messages.map((msg, i) => (
-            <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className="max-w-2xl flex flex-col gap-1">
-                {/* Message Bubble */}
-                <div className={`p-4 rounded-2xl text-sm leading-relaxed border ${
-                  msg.role === 'user'
-                    ? 'bg-indigo-600 text-white border-indigo-500 shadow-md'
-                    : msg.error
-                      ? 'bg-red-500/10 border-red-500/30 text-red-200'
-                      : 'bg-slate-900/80 border-slate-800/80 text-slate-100 shadow-sm'
-                }`}>
-                  {msg.content}
-                </div>
-
-                {/* Tool notification indicator */}
-                {msg.tool && (
-                  <div className="flex items-center gap-1.5 px-2 text-[11px] text-indigo-400 font-mono mt-0.5">
-                    <span>⚡ Executed: <strong>{msg.tool}</strong></span>
-                    <span className={`h-1.5 w-1.5 rounded-full ${msg.toolStatus === 'Success' ? 'bg-green-400' : 'bg-red-400'}`}></span>
-                  </div>
-                )}
-
-                {/* Time */}
-                <span className={`text-[10px] text-slate-500 px-2 ${msg.role === 'user' ? 'text-right' : 'text-left'}`}>
-                  {msg.timestamp}
-                </span>
-              </div>
-            </div>
+            <ChatMessage key={i} msg={msg} />
           ))}
-          {loading && (
-            <div className="flex justify-start">
-              <div className="flex flex-col gap-1.5">
-                <div className="bg-slate-900/60 border border-slate-800/50 p-4 rounded-2xl flex items-center gap-3">
-                  <div className="flex space-x-1">
-                    <span className="h-2 w-2 bg-indigo-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
-                    <span className="h-2 w-2 bg-indigo-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
-                    <span className="h-2 w-2 bg-indigo-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
-                  </div>
-                  <span className="text-xs text-slate-400">Processing...</span>
-                </div>
-              </div>
-            </div>
+
+          {/* Two-phase confirmation card */}
+          {pendingConfirmation && !loading && (
+            <ConfirmationCard
+              order={pendingConfirmation.order}
+              onConfirm={handleConfirmRefund}
+              onCancel={handleCancelRefund}
+            />
           )}
+
+          {/* Context-aware loading indicator */}
+          {loading && <LoadingIndicator phase={loadingPhase} />}
+
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Suggested Prompts Bar */}
-        <div className="px-8 py-3 bg-slate-950/20 border-t border-slate-900 flex flex-wrap gap-2 items-center">
-          <span className="text-[11px] text-slate-500 uppercase font-semibold">Try:</span>
-          {suggestedPrompts.map((p, idx) => (
-            <button
-              key={idx}
-              disabled={loading || escalated}
-              onClick={() => handleSendMessage(p.prompt)}
-              className="text-xs bg-slate-900 hover:bg-slate-800 active:bg-slate-800 border border-slate-800/80 px-3 py-1.5 rounded-full text-indigo-300 hover:text-indigo-200 transition-all font-medium disabled:opacity-50 disabled:pointer-events-none"
-            >
-              {p.text}
-            </button>
-          ))}
-        </div>
+        {/* Suggested prompts */}
+        {suggestedPrompts.length > 0 && (
+          <div className="px-6 py-2 border-t border-slate-800/20 flex flex-wrap gap-2 items-center shrink-0">
+            <span className="text-[10px] text-slate-600 uppercase font-semibold tracking-wider">
+              Suggestions
+            </span>
+            {suggestedPrompts.map((p, idx) => (
+              <button
+                key={idx}
+                disabled={loading || escalated || !!pendingConfirmation}
+                onClick={() => handleSendMessage(p.prompt)}
+                className="text-[11px] bg-[#111827]/50 hover:bg-[#151b28] border border-slate-800/30 px-3 py-1.5 rounded-full text-indigo-300/80 hover:text-indigo-200 transition-all font-medium disabled:opacity-40 disabled:pointer-events-none cursor-pointer"
+              >
+                {p.text}
+              </button>
+            ))}
+          </div>
+        )}
 
-        {/* Input Bar */}
-        <div className="p-8 pt-2 border-t border-slate-900 bg-[#0c1220]/30">
-          <div className="flex gap-3">
+        {/* Input bar */}
+        <div className="p-4 pt-2 border-t border-slate-800/20 bg-[#0a0f1a]/25 shrink-0">
+          <div className="flex gap-2.5">
             <input
+              id="chat-input"
               type="text"
-              disabled={loading || escalated}
+              disabled={loading || escalated || !!pendingConfirmation}
               value={inputText}
               onChange={e => setInputText(e.target.value)}
               onKeyDown={handleKeyPress}
-              placeholder={escalated ? "Agent connected. Please refer to dashboard instructions." : "Type your query here (e.g., 'Where is order 54321?')..."}
-              className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-5 py-4 text-sm focus:outline-none focus:border-indigo-500 placeholder-slate-500 transition-colors disabled:opacity-50"
+              placeholder={
+                escalated
+                  ? 'Chat escalated to human agent.'
+                  : pendingConfirmation
+                    ? 'Please confirm or cancel the pending action above.'
+                    : 'Type your message...'
+              }
+              className="flex-1 bg-[#111827]/50 border border-slate-800/30 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500/40 placeholder-slate-600 transition-colors disabled:opacity-40"
             />
             <button
-              disabled={loading || escalated || !inputText.trim()}
+              id="send-button"
+              disabled={loading || escalated || !inputText.trim() || !!pendingConfirmation}
               onClick={() => handleSendMessage()}
-              className="bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white rounded-xl px-6 font-semibold text-sm transition-all shadow-lg flex items-center justify-center disabled:opacity-55 disabled:cursor-not-allowed"
+              className="bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white rounded-xl px-5 font-semibold text-sm transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
             >
               Send
             </button>
@@ -320,44 +395,43 @@ export default function App() {
         </div>
       </div>
 
-      {/* RIGHT SIDEBAR: Live Database Explorer */}
-      <div className="w-80 border-l border-slate-800 bg-[#0c1220]/80 p-6 flex flex-col">
-        <h2 className="text-sm font-semibold tracking-wider uppercase text-slate-400 mb-4">Live Database Explorer</h2>
-        <p className="text-xs text-slate-500 mb-4">
-          This pane displays real-time changes to the mock backend order records when tool-calls occur.
-        </p>
+      {/* ─── RIGHT SIDEBAR ─── */}
+      <div className="w-72 border-l border-slate-800/40 bg-[#0a0f1a]/90 p-5 flex flex-col shrink-0">
+        {/* Tab toggle (only appears after escalation) */}
+        {escalated && (
+          <div className="flex gap-1 mb-4 p-0.5 bg-slate-900/50 rounded-lg">
+            <button
+              onClick={() => setShowAgentDashboard(false)}
+              className={`flex-1 text-[10px] font-semibold py-1.5 rounded-md transition-colors cursor-pointer ${
+                !showAgentDashboard
+                  ? 'bg-slate-800/70 text-slate-200'
+                  : 'text-slate-500 hover:text-slate-400'
+              }`}
+            >
+              Database
+            </button>
+            <button
+              onClick={() => setShowAgentDashboard(true)}
+              className={`flex-1 text-[10px] font-semibold py-1.5 rounded-md transition-colors cursor-pointer ${
+                showAgentDashboard
+                  ? 'bg-red-500/15 text-red-400'
+                  : 'text-slate-500 hover:text-slate-400'
+              }`}
+            >
+              Agent View
+            </button>
+          </div>
+        )}
 
-        <div className="flex-1 overflow-y-auto flex flex-col gap-4 font-mono text-xs pr-1">
-          {Object.keys(orders).length === 0 ? (
-            <span className="text-slate-600 italic">Database status disconnected.</span>
-          ) : (
-            Object.values(orders).map((order) => (
-              <div key={order.order_id} className="p-4 rounded-xl bg-slate-900 border border-slate-800 flex flex-col gap-2 shadow-sm">
-                <div className="flex justify-between items-center border-b border-slate-850 pb-1.5">
-                  <span className="text-indigo-300 font-bold">Order #{order.order_id}</span>
-                  <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold ${
-                    order.status === 'Delivered' ? 'bg-green-500/10 text-green-400' : 'bg-yellow-500/10 text-yellow-400'
-                  }`}>
-                    {order.status}
-                  </span>
-                </div>
-                <div className="flex flex-col gap-1 text-[11px] text-slate-400">
-                  <div><span className="text-slate-500">Item:</span> {order.item}</div>
-                  <div><span className="text-slate-500">Price:</span> ${order.price}</div>
-                  <div><span className="text-slate-500">Carrier:</span> {order.carrier}</div>
-                  <div><span className="text-slate-500">Delivery:</span> {order.delivery_date}</div>
-                  <div className="flex items-center gap-1.5 mt-1">
-                    <span className="text-slate-500">Refunded:</span>
-                    <span className={`h-2.5 w-2.5 rounded-full ${order.refunded ? 'bg-green-400' : 'bg-red-400'}`}></span>
-                    <span className={order.refunded ? 'text-green-400 font-bold' : 'text-slate-500'}>
-                      {order.refunded ? 'YES' : 'NO'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
+        {showAgentDashboard && escalated ? (
+          <AgentDashboard
+            messages={messages}
+            sentiment={sentiment}
+            onResolve={handleResolveTicket}
+          />
+        ) : (
+          <DatabaseExplorer orders={orders} />
+        )}
       </div>
     </div>
   );
