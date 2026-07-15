@@ -18,6 +18,17 @@ function getSessionHistory(sessionId) {
   return memoryStore[sessionId];
 }
 
+function getSessionMeta(sessionId) {
+  if (!memoryStore[sessionId].meta) {
+    memoryStore[sessionId].meta = {
+      unresolvedAttempts: 0,
+      lastIntent: null
+    };
+  }
+  return memoryStore[sessionId].meta;
+}
+
+
 function calculateSentiment(message) {
   const lowercase = message.toLowerCase();
   const negativeWords = ['terrible', 'bad', 'worst', 'hate', 'furious', 'angry', 'sucks', 'stupid', 'useless', 'human', 'agent', 'person', 'manager'];
