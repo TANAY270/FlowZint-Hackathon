@@ -37,19 +37,7 @@ export default function ChatMessage({ msg }) {
       <div className="max-w-2xl flex flex-col gap-1">
         {renderContent()}
 
-        {/* Tool indicator (when no rich card is shown) */}
-        {msg.tool && !msg.toolData && (
-          <div className="flex items-center gap-1.5 px-2 text-[11px] text-indigo-400/80 font-mono mt-0.5">
-            <span>
-              ⚡ Executed: <strong>{msg.tool}</strong>
-            </span>
-            <span
-              className={`h-1.5 w-1.5 rounded-full ${
-                msg.toolStatus === 'Success' ? 'bg-emerald-400' : 'bg-red-400'
-              }`}
-            />
-          </div>
-        )}
+
 
         {/* Timestamp */}
         <span

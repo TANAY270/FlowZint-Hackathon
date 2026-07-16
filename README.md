@@ -117,3 +117,33 @@ Three independent rules evaluated after every message:
 
 ### Sentiment Scoring
 Scored 0–1 per message using keyword weights, caps lock ratio, and exclamation count. Passed into the system prompt so the LLM adapts its tone in real time. Falls below 0.3 → escalation triggers automatically.
+
+## How to Test (For Judges)
+
+We built several advanced edge cases to prove our bot isn't just a basic wrapper. Try these exact prompts in the Chat UI to test our logic:
+
+### 1. The Refund Confirmation Gate
+When you ask for a refund, the bot cannot blindly process it. It intercepts the tool call and asks for confirmation first.
+- **Type:** `I want a refund for order 1042`
+- **Expected:** The bot asks you to confirm the $45.99 refund for your Medium Blue Jacket.
+- **Type:** `yes please`
+- **Expected:** The refund successfully executes.
+
+### 2. Proactive Context Tracking
+The bot knows your state before you even type an order ID.
+- **Type:** `Where is my order?`
+- **Expected:** The bot automatically infers your order ID from the mock database context and gives you the tracking info without asking you for the ID.
+
+### 3. The Anti-Loop Escalation Engine
+If the bot gets stuck or you keep asking the same thing, it auto-escalates.
+- **Type:** `i need help`
+- **Expected:** Bot asks what you need help with.
+- **Type:** `i need help`
+- **Expected:** Bot asks again.
+- **Type:** `i need help`
+- **Expected:** The Orchestrator detects `unresolvedAttempts >= 2` and instantly escalates you to a human agent.
+
+### 4. Sentiment-Triggered Escalation
+The bot reads the sentiment of every message in real-time.
+- **Type:** `this is terrible and i hate this useless service`
+- **Expected:** The sentiment score drops below 0.3 and instantly triggers a human handoff.
