@@ -1,92 +1,80 @@
 import React from 'react';
 
-const STEPS = ['Ordered', 'Shipped', 'In Transit', 'Delivered'];
-
 export default function OrderCard({ order }) {
-  const statusIndex = STEPS.findIndex(
+  const STATUS_STEPS = ['Processing', 'Shipped', 'In Transit', 'Delivered'];
+  
+  const statusIndex = STATUS_STEPS.findIndex(
     s => s.toLowerCase() === order.status?.toLowerCase()
   );
-  const currentStep = statusIndex >= 0 ? statusIndex : 0;
+  const currentStepIndex = statusIndex >= 0 ? statusIndex : 0;
+
+  const steps = STATUS_STEPS.map((stepName, i) => {
+    const isDone = i < currentStepIndex;
+    const isActive = i === currentStepIndex;
+    return {
+      label: stepName,
+      done: isDone,
+      active: isActive,
+      icon: isDone ? '✓' : isActive ? '◎' : '○'
+    };
+  });
 
   return (
-    <div className="glass-card p-4 max-w-md animate-fade-in-up">
+    <div className="claude-card p-5 mt-2 min-w-[280px] max-w-[320px] animate-fade-in-up">
       {/* Header */}
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <div className="h-7 w-7 rounded-lg bg-indigo-500/15 flex items-center justify-center text-sm">
-            📦
-          </div>
-          <span className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
+      <div className="flex justify-between items-center mb-4 border-b border-[var(--border-light)] pb-4">
+        <div>
+          <div className="text-[10px] text-[var(--text-secondary)] font-bold uppercase tracking-wider">
             Order #{order.order_id}
-          </span>
+          </div>
+          <div className="text-base font-bold text-[var(--text-primary)] mt-1">
+            {order.item}
+          </div>
         </div>
-        <span
-          className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
-            order.status === 'Delivered'
-              ? 'bg-emerald-500/15 text-emerald-400'
-              : 'bg-amber-500/15 text-amber-400'
-          }`}
-        >
+        <div className="px-2.5 py-1 rounded bg-[var(--bg-primary)] text-[11px] font-semibold text-[var(--text-secondary)] uppercase tracking-wider border border-[var(--border-light)]">
           {order.status}
-        </span>
-      </div>
-
-      {/* Details grid */}
-      <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs mb-4 px-0.5">
-        <div>
-          <span className="text-slate-600 text-[10px]">Item</span>
-          <p className="text-slate-200 font-medium">{order.item}</p>
-        </div>
-        <div>
-          <span className="text-slate-600 text-[10px]">Price</span>
-          <p className="text-slate-200 font-medium">${order.price}</p>
-        </div>
-        <div>
-          <span className="text-slate-600 text-[10px]">Carrier</span>
-          <p className="text-slate-200 font-medium">{order.carrier}</p>
-        </div>
-        <div>
-          <span className="text-slate-600 text-[10px]">Est. Delivery</span>
-          <p className="text-slate-200 font-medium">{order.delivery_date}</p>
         </div>
       </div>
 
-      {/* Progress Timeline */}
-      <div className="relative flex justify-between px-1 pt-1 pb-0.5">
-        {/* Background track */}
-        <div
-          className="absolute top-[9px] h-[2px] rounded-full bg-slate-700/50"
-          style={{ left: '12.5%', width: '75%' }}
-        />
-        {/* Active track */}
-        <div
-          className="absolute top-[9px] h-[2px] rounded-full bg-emerald-400/80 transition-all duration-700 ease-out"
-          style={{
-            left: '12.5%',
-            width: `${currentStep > 0 ? (currentStep / (STEPS.length - 1)) * 75 : 0}%`,
-          }}
-        />
+      {/* ETA */}
+      <div className="bg-[var(--bg-primary)] rounded-lg p-3 flex items-center gap-3 mb-5 border border-[var(--border-light)]">
+        <div>
+          <div className="text-[11px] text-[var(--text-secondary)] font-medium">Expected Delivery</div>
+          <div className="text-sm font-bold text-[var(--accent-orange)]">{order.delivery_date}</div>
+        </div>
+      </div>
 
-        {STEPS.map((step, i) => (
-          <div key={step} className="flex flex-col items-center flex-1 z-10">
+      {/* Progress steps */}
+      <div className="flex flex-col gap-3">
+        {steps.map((step, i) => (
+          <div key={i} className="flex items-center gap-3">
             <div
-              className={`h-2.5 w-2.5 rounded-full border-2 transition-all duration-300 ${
-                i < currentStep
-                  ? 'bg-emerald-400 border-emerald-400'
-                  : i === currentStep
-                    ? 'bg-indigo-500 border-indigo-400 shadow-[0_0_6px_rgba(99,102,241,0.5)]'
-                    : 'bg-[#151b28] border-slate-600'
-              }`}
-            />
-            <span
-              className={`text-[9px] mt-1.5 leading-none font-medium ${
-                i <= currentStep ? 'text-slate-300' : 'text-slate-600'
+              className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0 transition-colors ${
+                step.done
+                  ? 'bg-[var(--accent-orange)] text-white'
+                  : step.active
+                    ? 'border-2 border-[var(--accent-orange)] text-[var(--accent-orange)]'
+                    : 'border-2 border-[var(--border-light)] text-[var(--border-light)]'
               }`}
             >
-              {step}
+              {step.icon}
+            </div>
+            <span
+              className={`text-xs ${
+                step.active ? 'font-bold text-[var(--text-primary)]' : step.done ? 'font-medium text-[var(--text-primary)]' : 'font-medium text-[var(--text-secondary)]'
+              }`}
+            >
+              {step.label}
             </span>
           </div>
         ))}
+      </div>
+
+      {/* Tracking number */}
+      <div className="mt-5 pt-3 border-t border-[var(--border-light)] text-center">
+        <span className="text-[10px] text-[var(--text-secondary)] uppercase tracking-widest font-mono font-bold">
+          Via {order.carrier.toUpperCase()}
+        </span>
       </div>
     </div>
   );

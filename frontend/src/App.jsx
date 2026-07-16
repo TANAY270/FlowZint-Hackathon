@@ -9,32 +9,35 @@ import DatabaseExplorer from './components/DatabaseExplorer';
 
 const API_BASE = 'http://localhost:5000/api';
 
-/** Determine a context-specific loading message based on the user's text. */
+const QUICK_REPLIES = [
+  { label: 'Track Order' },
+  { label: 'Return Policy' },
+  { label: 'Talk to Human' },
+];
+
 function detectLoadingPhase(text) {
   const lower = text.toLowerCase();
   if (lower.includes('refund') || lower.includes('return') || lower.includes('money back'))
-    return '💳 Processing refund request...';
+    return 'Processing refund request...';
   if (lower.includes('track') || lower.includes('where') || lower.includes('status'))
-    return '🔍 Searching order records...';
+    return 'Searching order records...';
   if (lower.includes('human') || lower.includes('agent') || lower.includes('manager') || lower.includes('person'))
-    return '🤝 Connecting to support specialist...';
-  return '💬 Thinking...';
+    return 'Connecting to support specialist...';
+  return 'Thinking...';
 }
 
 export default function App() {
-  // ── State ──────────────────────────────────────────────
   const [sessionId] = useState(() => 'sess_' + Math.random().toString(36).substr(2, 9));
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
-      content:
-        "Hello! I'm your Flowzint AI assistant. I can help you track orders, process refunds, or connect you with a specialist. How can I help?",
+      content: "Hello! I'm FlowBot. How can I help you today?",
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     },
   ]);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(false);
-  const [loadingPhase, setLoadingPhase] = useState('💬 Thinking...');
+  const [loadingPhase, setLoadingPhase] = useState('Thinking...');
   const [sentiment, setSentiment] = useState(0.5);
   const [sentimentHistory, setSentimentHistory] = useState([0.5]);
   const [escalated, setEscalated] = useState(false);
@@ -42,13 +45,19 @@ export default function App() {
   const [orders, setOrders] = useState({});
   const [pendingConfirmation, setPendingConfirmation] = useState(null);
   const [showAgentDashboard, setShowAgentDashboard] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(false);
+
+  useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    } else {
+      document.documentElement.removeAttribute('data-theme');
+    }
+  }, [isDarkMode]);
 
   const messagesEndRef = useRef(null);
 
-  // ── Effects ────────────────────────────────────────────
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
+  const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
 
   useEffect(() => {
     scrollToBottom();
@@ -67,7 +76,6 @@ export default function App() {
     fetchOrders();
   }, []);
 
-  // ── API Call (no user-message handling) ─────────────────
   const callAPI = async (text) => {
     setLoadingPhase(detectLoadingPhase(text));
     setLoading(true);
@@ -82,17 +90,12 @@ export default function App() {
       if (!res.ok) throw new Error('Network response error');
       const data = await res.json();
 
-      // Record tool execution in sidebar log
       if (data.toolExecuted) {
         setToolLogs(prev => [
           {
             tool: data.toolExecuted,
             status: data.toolStatus,
-            timestamp: new Date().toLocaleTimeString([], {
-              hour: '2-digit',
-              minute: '2-digit',
-              second: '2-digit',
-            }),
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
           },
           ...prev,
         ]);
@@ -124,8 +127,7 @@ export default function App() {
         ...prev,
         {
           role: 'assistant',
-          content:
-            'Sorry, I encountered an error connecting to the server. Please ensure the backend is running on port 5000.',
+          content: 'Sorry, I encountered an error connecting to the server. Please ensure the backend is running on port 5000.',
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           error: true,
         },
@@ -135,7 +137,6 @@ export default function App() {
     }
   };
 
-  // ── User-Facing Send Handler ───────────────────────────
   const handleSendMessage = async (textToSend) => {
     const text = textToSend || inputText;
     if (!text.trim()) return;
@@ -148,7 +149,6 @@ export default function App() {
     };
     setMessages(prev => [...prev, userMsg]);
 
-    // Two-phase refund gate: intercept refund requests that mention a known order
     const lower = text.toLowerCase();
     if (lower.includes('refund') && !pendingConfirmation) {
       const orderMatch = text.match(/\b(\d{4,5})\b/);
@@ -158,14 +158,13 @@ export default function App() {
           order: orders[orderMatch[1]],
           originalMessage: text,
         });
-        return; // pause — don't call API until user confirms
+        return;
       }
     }
 
     await callAPI(text);
   };
 
-  // ── Confirmation Handlers ──────────────────────────────
   const handleConfirmRefund = async () => {
     if (!pendingConfirmation) return;
     const msg = pendingConfirmation.originalMessage;
@@ -179,15 +178,17 @@ export default function App() {
       ...prev,
       {
         role: 'assistant',
-        content:
-          'No problem — the refund request has been cancelled. Is there anything else I can help you with?',
+        content: 'No problem — the refund request has been cancelled. Is there anything else I can help you with?',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       },
     ]);
   };
 
   const handleKeyPress = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) handleSendMessage();
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
+    }
   };
 
   const handleResolveTicket = () => {
@@ -197,107 +198,82 @@ export default function App() {
       ...prev,
       {
         role: 'assistant',
-        content:
-          'The support ticket has been marked as resolved by a specialist. Thank you for your patience — is there anything else I can help with?',
+        content: 'The support ticket has been marked as resolved by a specialist. Thank you for your patience — is there anything else I can help with?',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       },
     ]);
   };
 
-  // ── Dynamic Suggested Prompts ──────────────────────────
-  const getSuggestedPrompts = () => {
-    if (escalated) return [];
-
-    const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant');
-
-    if (lastAssistant?.tool === 'track_order') {
-      return [
-        {
-          text: 'Request refund',
-          prompt: `I'd like a refund for order #${lastAssistant.toolData?.order_id || ''}`,
-        },
-        { text: 'Track another order', prompt: 'Can you track a different order for me?' },
-        { text: 'Speak to a human', prompt: "I'd like to speak with a human representative please." },
-      ];
-    }
-
-    if (lastAssistant?.tool === 'process_refund') {
-      return [
-        { text: 'Check another order', prompt: 'Can you check on my other orders?' },
-        { text: 'I have a question', prompt: 'I have another question about my account.' },
-      ];
-    }
-
-    return [
-      { text: 'Track Order #54321', prompt: 'Where is my order #54321?' },
-      { text: 'Refund Order #1042', prompt: 'I want to request a refund for order #1042.' },
-      {
-        text: 'Speak to a human',
-        prompt: 'I need to speak with a support representative immediately.',
-      },
-    ];
+  const handleQuickReply = (label) => {
+    handleSendMessage(label);
   };
 
-  const suggestedPrompts = getSuggestedPrompts();
-
-  // ── Render ─────────────────────────────────────────────
   return (
-    <div className="flex h-screen bg-[#080c14] text-slate-100 overflow-hidden">
+    <div className="flex h-screen overflow-hidden bg-[var(--bg-card)] text-[var(--text-primary)]">
+      
       {/* ─── LEFT SIDEBAR ─── */}
-      <div className="w-72 border-r border-slate-800/40 bg-[#0a0f1a]/90 p-5 flex flex-col gap-5 shrink-0">
-        {/* Session */}
-        <div>
-          <h2 className="text-[10px] font-semibold tracking-wider uppercase text-slate-600 mb-1.5">
-            Session
-          </h2>
-          <div className="flex items-center gap-2">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            <code className="text-[11px] text-indigo-300/80 select-all font-mono">
-              {sessionId}
-            </code>
+      <div className="w-64 bg-[var(--bg-primary)] border-r border-[var(--border-light)] p-5 flex flex-col shrink-0">
+        <div className="mb-8 flex justify-between items-start">
+          <div>
+            <div className="flex items-center gap-3 mb-2">
+              <img src="/logo.png" alt="Logo" className="w-6 h-6 object-contain" />
+              <h1 className="text-lg font-bold">FlowBot</h1>
+            </div>
+            <div className="text-xs text-[var(--text-secondary)] font-bold">Customer Care Assistant</div>
           </div>
+          <button 
+            onClick={() => setIsDarkMode(!isDarkMode)}
+            className="px-2 py-1 text-xs font-bold rounded-md hover:bg-black/5 dark:hover:bg-white/5 border border-[var(--border-light)]"
+            title="Toggle Dark Mode"
+          >
+            {isDarkMode ? 'Light' : 'Dark'}
+          </button>
         </div>
 
-        {/* Sentiment */}
-        <SentimentGauge sentiment={sentiment} history={sentimentHistory} />
+        <div className="mb-6">
+          <h2 className="text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-2">
+            Session
+          </h2>
+          <code className="text-xs text-[var(--text-primary)] bg-[var(--border-light)] px-2 py-1 rounded">
+            {sessionId}
+          </code>
+        </div>
 
-        {/* Escalation status */}
-        <div
-          className={`glass-card p-3 transition-all duration-300 ${
-            escalated ? 'border-red-500/30' : ''
-          }`}
-        >
-          <h3 className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
-            Routing Status
+        <div className="mb-6">
+          <SentimentGauge sentiment={sentiment} history={sentimentHistory} />
+        </div>
+
+        <div className="mb-6 p-3 rounded-lg border border-[var(--border-light)] bg-[var(--bg-card)]">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1">
+            Status
           </h3>
           {escalated ? (
-            <div className="flex flex-col gap-1">
-              <span className="text-xs text-red-400 font-bold flex items-center gap-1.5">
-                <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse" />
+            <div>
+              <span className="text-sm font-bold text-[#D92D20] flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-[#D92D20]"></span>
                 ESCALATED
               </span>
-              <p className="text-[10px] text-slate-500 leading-relaxed">
-                Transferred to human agent queue. Chat context has been forwarded.
+              <p className="text-xs text-[var(--text-secondary)] mt-1 leading-snug">
+                Transferred to human agent.
               </p>
             </div>
           ) : (
-            <div className="flex flex-col gap-1">
-              <span className="text-xs text-indigo-300 font-medium">AI-Managed</span>
-              <p className="text-[10px] text-slate-600 leading-relaxed">
-                Confidence sufficient. No escalation triggers detected.
+            <div>
+              <span className="text-sm font-bold text-[#039855]">AI-Managed</span>
+              <p className="text-xs text-[var(--text-secondary)] mt-1 leading-snug">
+                No escalation triggers detected.
               </p>
             </div>
           )}
         </div>
 
-        {/* Tool logs */}
         <div className="flex-1 flex flex-col min-h-0">
-          <h3 className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-2">
-            Tool Execution Log
+          <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-2">
+            System Log
           </h3>
-          <div className="flex-1 overflow-y-auto flex flex-col gap-2 pr-0.5">
+          <div className="flex-1 overflow-y-auto flex flex-col gap-2">
             {toolLogs.length === 0 ? (
-              <p className="text-[11px] text-slate-700 italic">No tool calls in this session.</p>
+              <p className="text-xs text-[var(--text-secondary)] italic">No tool calls yet.</p>
             ) : (
               toolLogs.map((log, i) => <ToolLog key={i} log={log} />)
             )}
@@ -306,116 +282,84 @@ export default function App() {
       </div>
 
       {/* ─── CENTER: CHAT ─── */}
-      <div className="flex-1 flex flex-col bg-[#0b0f18] min-w-0">
-        {/* Header */}
-        <div className="h-14 border-b border-slate-800/30 bg-[#0a0f1a]/40 flex items-center justify-between px-6 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center font-bold text-white text-xs shadow-lg shadow-indigo-500/20">
-              FZ
-            </div>
-            <div>
-              <h1 className="text-sm font-semibold text-slate-100">Flowzint Support</h1>
-              <p className="text-[10px] text-slate-500">AI-Powered Customer Care</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-            <span className="text-[10px] text-slate-500">Online</span>
-          </div>
-        </div>
-
+      <div className="flex-1 flex flex-col items-center bg-[var(--bg-card)] relative min-w-0">
+        
         {/* Messages pane */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+        <div className="w-full max-w-3xl flex-1 overflow-y-auto px-6 pt-8 pb-4 custom-scrollbar">
           {messages.map((msg, i) => (
             <ChatMessage key={i} msg={msg} />
           ))}
 
-          {/* Two-phase confirmation card */}
           {pendingConfirmation && !loading && (
-            <ConfirmationCard
-              order={pendingConfirmation.order}
-              onConfirm={handleConfirmRefund}
-              onCancel={handleCancelRefund}
-            />
+            <ConfirmationCard order={pendingConfirmation.order} onConfirm={handleConfirmRefund} onCancel={handleCancelRefund} />
           )}
 
-          {/* Context-aware loading indicator */}
           {loading && <LoadingIndicator phase={loadingPhase} />}
 
-          <div ref={messagesEndRef} />
+          <div ref={messagesEndRef} className="h-4" />
         </div>
 
-        {/* Suggested prompts */}
-        {suggestedPrompts.length > 0 && (
-          <div className="px-6 py-2 border-t border-slate-800/20 flex flex-wrap gap-2 items-center shrink-0">
-            <span className="text-[10px] text-slate-600 uppercase font-semibold tracking-wider">
-              Suggestions
-            </span>
-            {suggestedPrompts.map((p, idx) => (
+        {/* Input Area */}
+        <div className="w-full max-w-3xl px-6 pb-6 pt-2 bg-gradient-to-t from-[var(--bg-card)] via-[var(--bg-card)] to-transparent">
+          
+          {/* Quick replies */}
+          <div className="flex gap-2 mb-3 overflow-x-auto custom-scrollbar">
+            {QUICK_REPLIES.map((qr) => (
               <button
-                key={idx}
+                key={qr.label}
+                className="claude-btn-secondary px-3 py-1 text-xs font-medium whitespace-nowrap"
+                onClick={() => handleQuickReply(qr.label)}
                 disabled={loading || escalated || !!pendingConfirmation}
-                onClick={() => handleSendMessage(p.prompt)}
-                className="text-[11px] bg-[#111827]/50 hover:bg-[#151b28] border border-slate-800/30 px-3 py-1.5 rounded-full text-indigo-300/80 hover:text-indigo-200 transition-all font-medium disabled:opacity-40 disabled:pointer-events-none cursor-pointer"
               >
-                {p.text}
+                {qr.label}
               </button>
             ))}
           </div>
-        )}
 
-        {/* Input bar */}
-        <div className="p-4 pt-2 border-t border-slate-800/20 bg-[#0a0f1a]/25 shrink-0">
-          <div className="flex gap-2.5">
-            <input
-              id="chat-input"
-              type="text"
+          <div className="claude-input-wrapper p-3 relative flex items-end min-h-[56px]">
+            <textarea
               disabled={loading || escalated || !!pendingConfirmation}
               value={inputText}
-              onChange={e => setInputText(e.target.value)}
+              onChange={(e) => setInputText(e.target.value)}
               onKeyDown={handleKeyPress}
               placeholder={
-                escalated
-                  ? 'Chat escalated to human agent.'
-                  : pendingConfirmation
-                    ? 'Please confirm or cancel the pending action above.'
-                    : 'Type your message...'
+                escalated ? 'Chat escalated to human agent.' :
+                pendingConfirmation ? 'Please confirm action above.' :
+                'Reply to FlowBot...'
               }
-              className="flex-1 bg-[#111827]/50 border border-slate-800/30 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500/40 placeholder-slate-600 transition-colors disabled:opacity-40"
+              className="claude-input flex-1 resize-none h-[24px] max-h-[120px] text-sm py-0.5 leading-snug"
+              style={{ opacity: loading || escalated ? 0.5 : 1 }}
+              rows={1}
             />
             <button
-              id="send-button"
-              disabled={loading || escalated || !inputText.trim() || !!pendingConfirmation}
+              className="claude-btn-primary ml-3 w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
               onClick={() => handleSendMessage()}
-              className="bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white rounded-xl px-5 font-semibold text-sm transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+              disabled={loading || escalated || !inputText.trim() || !!pendingConfirmation}
             >
-              Send
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                <path d="M22 2L11 13M22 2L15 22L11 13M22 2L2 9L11 13" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
             </button>
           </div>
         </div>
       </div>
 
-      {/* ─── RIGHT SIDEBAR ─── */}
-      <div className="w-72 border-l border-slate-800/40 bg-[#0a0f1a]/90 p-5 flex flex-col shrink-0">
-        {/* Tab toggle (only appears after escalation) */}
+      {/* ─── RIGHT SIDEBAR (For Escalation/DB) ─── */}
+      <div className="w-72 bg-[var(--bg-primary)] border-l border-[var(--border-light)] p-5 flex flex-col shrink-0">
         {escalated && (
-          <div className="flex gap-1 mb-4 p-0.5 bg-slate-900/50 rounded-lg">
+          <div className="flex gap-2 mb-6">
             <button
               onClick={() => setShowAgentDashboard(false)}
-              className={`flex-1 text-[10px] font-semibold py-1.5 rounded-md transition-colors cursor-pointer ${
-                !showAgentDashboard
-                  ? 'bg-slate-800/70 text-slate-200'
-                  : 'text-slate-500 hover:text-slate-400'
+              className={`flex-1 text-xs font-medium py-1.5 rounded-md border ${
+                !showAgentDashboard ? 'bg-[var(--bg-card)] border-[var(--border-light)] text-[var(--text-primary)]' : 'border-transparent text-[var(--text-secondary)] hover:bg-black/5'
               }`}
             >
               Database
             </button>
             <button
               onClick={() => setShowAgentDashboard(true)}
-              className={`flex-1 text-[10px] font-semibold py-1.5 rounded-md transition-colors cursor-pointer ${
-                showAgentDashboard
-                  ? 'bg-red-500/15 text-red-400'
-                  : 'text-slate-500 hover:text-slate-400'
+              className={`flex-1 text-xs font-medium py-1.5 rounded-md border ${
+                showAgentDashboard ? 'bg-[var(--bg-card)] border-[var(--border-light)] text-[var(--text-primary)]' : 'border-transparent text-[var(--text-secondary)] hover:bg-black/5'
               }`}
             >
               Agent View
@@ -423,15 +367,13 @@ export default function App() {
           </div>
         )}
 
-        {showAgentDashboard && escalated ? (
-          <AgentDashboard
-            messages={messages}
-            sentiment={sentiment}
-            onResolve={handleResolveTicket}
-          />
-        ) : (
-          <DatabaseExplorer orders={orders} />
-        )}
+        <div className="flex-1 flex flex-col min-h-0">
+          {showAgentDashboard && escalated ? (
+            <AgentDashboard messages={messages} sentiment={sentiment} onResolve={handleResolveTicket} />
+          ) : (
+            <DatabaseExplorer orders={orders} />
+          )}
+        </div>
       </div>
     </div>
   );
