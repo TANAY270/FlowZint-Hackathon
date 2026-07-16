@@ -2,69 +2,69 @@ import React from 'react';
 import OrderCard from './OrderCard';
 import RefundCard from './RefundCard';
 
+function renderText(text) {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, i) =>
+    part.startsWith('**') && part.endsWith('**') ? (
+      <strong key={i} className="font-semibold text-[var(--text-primary)]">
+        {part.slice(2, -2)}
+      </strong>
+    ) : (
+      <span key={i}>{part}</span>
+    )
+  );
+}
+
+export function BotAvatar() {
+  return (
+    <div className="w-8 h-8 rounded shrink-0 flex items-center justify-center bg-[#FDFCFB] border border-[#E5E3D8] overflow-hidden">
+      <img src="/logo.png" alt="FlowBot" className="w-6 h-6 object-contain" />
+    </div>
+  );
+}
+
 export default function ChatMessage({ msg }) {
   const isUser = msg.role === 'user';
 
-  // Decide whether to render a rich card alongside the text response
-  const renderContent = () => {
-    // Tool executed with structured data → show card below the text bubble
-    if (msg.toolData && msg.tool === 'track_order') {
-      return (
-        <div className="flex flex-col gap-2.5">
-          <TextBubble msg={msg} isUser={isUser} />
-          <OrderCard order={msg.toolData} />
+  if (isUser) {
+    return (
+      <div className="message-in flex justify-end mb-6">
+        <div className="max-w-[85%] sm:max-w-[75%]">
+          <div className="bg-[var(--bg-primary)] border border-[var(--border-light)] rounded-2xl rounded-tr-sm px-4 py-3 text-[15px] leading-relaxed text-[var(--text-primary)] font-medium">
+            {msg.content}
+          </div>
         </div>
-      );
-    }
+      </div>
+    );
+  }
 
-    if (msg.toolData && msg.tool === 'process_refund') {
-      return (
-        <div className="flex flex-col gap-2.5">
-          <TextBubble msg={msg} isUser={isUser} />
-          <RefundCard order={msg.toolData} />
-        </div>
-      );
-    }
-
-    // Default: plain text bubble
-    return <TextBubble msg={msg} isUser={isUser} />;
-  };
-
+  // System/Bot message
   return (
-    <div
-      className={`flex ${isUser ? 'justify-end' : 'justify-start'} animate-fade-in-up`}
-    >
-      <div className="max-w-2xl flex flex-col gap-1">
-        {renderContent()}
-
-
-
-        {/* Timestamp */}
-        <span
-          className={`text-[10px] text-slate-600 px-2 ${
-            isUser ? 'text-right' : 'text-left'
-          }`}
-        >
-          {msg.timestamp}
-        </span>
+    <div className="message-in flex items-start gap-4 mb-8">
+      <BotAvatar />
+      <div className="flex-1 max-w-[85%] sm:max-w-[80%] pt-1">
+        {msg.type === 'system' ? (
+          <span className="inline-block text-[11px] text-[var(--text-secondary)] bg-[var(--bg-primary)] border border-[var(--border-light)] px-2 py-1 font-semibold tracking-wider uppercase rounded">
+            {msg.content}
+          </span>
+        ) : (
+          <div className={`text-[15px] leading-relaxed text-[var(--text-primary)] ${msg.error ? 'text-[#D92D20]' : ''}`}>
+            {renderText(msg.content)}
+          </div>
+        )}
+        
+        {msg.toolData && msg.tool === 'track_order' && (
+          <div className="mt-4">
+            <OrderCard order={msg.toolData} />
+          </div>
+        )}
+        {msg.toolData && msg.tool === 'process_refund' && (
+          <div className="mt-4">
+            <RefundCard order={msg.toolData} />
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-/** Plain text message bubble */
-function TextBubble({ msg, isUser }) {
-  return (
-    <div
-      className={`px-4 py-3 rounded-2xl text-sm leading-relaxed border ${
-        isUser
-          ? 'bg-indigo-600/90 text-white border-indigo-500/50'
-          : msg.error
-            ? 'bg-red-500/10 border-red-500/30 text-red-200'
-            : 'bg-[#111827]/70 border-[#1e293b]/50 text-slate-100'
-      }`}
-    >
-      {msg.content}
-    </div>
-  );
-}
