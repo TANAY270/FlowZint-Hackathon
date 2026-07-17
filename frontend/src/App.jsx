@@ -45,6 +45,61 @@ export default function App() {
   const [pendingConfirmation, setPendingConfirmation] = useState(null);
   const [showAgentDashboard, setShowAgentDashboard] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+
+  const recognitionRef = useRef(null);
+
+  useEffect(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      
+      recognition.onstart = () => setIsListening(true);
+      recognition.onend = () => setIsListening(false);
+      recognition.onerror = (e) => {
+        console.error('Speech recognition error', e);
+        setIsListening(false);
+      };
+      // Important: Using functional state update inside a listener requires capturing it or just using the setState callback
+      recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        setInputText(prev => prev + (prev ? ' ' : '') + transcript);
+      };
+      recognitionRef.current = recognition;
+    }
+  }, []);
+
+  const toggleListening = () => {
+    if (!recognitionRef.current) {
+      alert("Your browser doesn't support Speech Recognition. Try Chrome.");
+      return;
+    }
+    if (isListening) {
+      recognitionRef.current.stop();
+    } else {
+      recognitionRef.current.start();
+    }
+  };
+
+  const playTTS = async (text) => {
+    try {
+      const res = await fetch(`${API_BASE}/voice/tts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      if (res.ok) {
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        audio.play();
+      }
+    } catch (err) {
+      console.error('TTS playback failed:', err);
+    }
+  };
 
   useEffect(() => {
     if (isDarkMode) {
@@ -127,6 +182,10 @@ export default function App() {
           toolData: data.toolData,
         },
       ]);
+
+      if (data.response) {
+        playTTS(data.response);
+      }
     } catch (err) {
       console.error(err);
       setMessages(prev => [
@@ -340,6 +399,7 @@ export default function App() {
               placeholder={
                 pendingConfirmation ? 'Please confirm action above.' :
                 escalated ? 'Chat continues — human agent is also monitoring.' :
+                isListening ? 'Listening...' :
                 'Reply to FlowBot...'
               }
               className="claude-input flex-1 resize-none h-[24px] max-h-[120px] text-sm py-0.5 leading-snug"
@@ -347,7 +407,23 @@ export default function App() {
               rows={1}
             />
             <button
-              className="claude-btn-primary ml-3 w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+              className="ml-2 w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border transition-all"
+              onClick={toggleListening}
+              disabled={loading || !!pendingConfirmation}
+              style={{
+                background: isListening ? 'var(--status-red-bg)' : 'var(--bg-primary)',
+                color: isListening ? 'var(--status-red-txt)' : 'var(--text-secondary)',
+                borderColor: isListening ? 'var(--status-red-txt)' : 'var(--border-light)'
+              }}
+              title="Dictate message"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                <path d="M12 2C10.3431 2 9 3.34315 9 5V11C9 12.6569 10.3431 14 12 14C13.6569 14 15 12.6569 15 11V5C15 3.34315 13.6569 2 12 2Z" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M19 10V11C19 14.866 15.866 18 12 18M5 10V11C5 14.866 8.13401 18 12 18M12 18V22M8 22H16" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </button>
+            <button
+              className="claude-btn-primary ml-2 w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
               onClick={() => handleSendMessage()}
               disabled={loading || !inputText.trim() || !!pendingConfirmation}
             >
