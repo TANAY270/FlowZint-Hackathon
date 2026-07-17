@@ -41,8 +41,25 @@ const toolsDefinition = [
   {
     type: "function",
     function: {
+      name: "request_refund_confirmation",
+      description: "Trigger a UI confirmation dialog for a refund. Use this when the customer asks for a refund. DO NOT use this if you receive a SYSTEM message stating the user has already confirmed.",
+      parameters: {
+        type: "object",
+        properties: {
+          order_id: {
+            type: "string",
+            description: "The order identifier."
+          }
+        },
+        required: ["order_id"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
       name: "process_refund",
-      description: "Initiate a full or partial refund for an order. Use when customer explicitly requests a refund and provides reason.",
+      description: "Initiate a full or partial refund for an order. ONLY use this AFTER the user has clicked Confirm Refund in the UI and you have received a [SYSTEM: User clicked Confirm Refund] message.",
       parameters: {
         type: "object",
         properties: {
@@ -93,6 +110,20 @@ async function executeTool(name, args) {
       return {
         success: false,
         error: `Order ID #${args.order_id} not found in database.`
+      };
+    }
+    case "request_refund_confirmation": {
+      const order = mockOrders[args.order_id];
+      if (!order) {
+        return {
+          success: false,
+          error: `Order ID #${args.order_id} not found in database.`
+        };
+      }
+      return {
+        success: true,
+        message: "Confirmation UI sent. Awaiting user's explicit confirmation via UI.",
+        data: order
       };
     }
     case "process_refund": {
