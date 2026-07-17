@@ -102,6 +102,13 @@ export default function App() {
         fetchOrders();
       }
 
+      if (data.pendingConfirmation) {
+        setPendingConfirmation({
+          orderId: data.pendingConfirmation.orderId,
+          order: data.pendingConfirmation.order,
+        });
+      }
+
       setSentiment(data.sentiment);
       setSentimentHistory(prev => [...prev, data.sentiment]);
 
@@ -149,39 +156,21 @@ export default function App() {
     };
     setMessages(prev => [...prev, userMsg]);
 
-    const lower = text.toLowerCase();
-    if (lower.includes('refund') && !pendingConfirmation) {
-      const orderMatch = text.match(/\b(\d{4,5})\b/);
-      if (orderMatch && orders[orderMatch[1]] && !orders[orderMatch[1]].refunded) {
-        setPendingConfirmation({
-          orderId: orderMatch[1],
-          order: orders[orderMatch[1]],
-          originalMessage: text,
-        });
-        return;
-      }
-    }
-
     await callAPI(text);
   };
 
   const handleConfirmRefund = async () => {
     if (!pendingConfirmation) return;
-    const msg = pendingConfirmation.originalMessage;
+    const orderId = pendingConfirmation.orderId;
     setPendingConfirmation(null);
-    await callAPI(msg);
+    await callAPI(`[SYSTEM: User clicked Confirm Refund for order #${orderId}]`);
   };
 
-  const handleCancelRefund = () => {
+  const handleCancelRefund = async () => {
+    if (!pendingConfirmation) return;
+    const orderId = pendingConfirmation.orderId;
     setPendingConfirmation(null);
-    setMessages(prev => [
-      ...prev,
-      {
-        role: 'assistant',
-        content: 'No problem — the refund request has been cancelled. Is there anything else I can help you with?',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      },
-    ]);
+    await callAPI(`[SYSTEM: User clicked Cancel Refund for order #${orderId}]`);
   };
 
   const handleKeyPress = (e) => {

@@ -94,61 +94,6 @@ async function processMessage(sessionId, userMessage) {
   const sentiment = calculateSentiment(userMessage);
   const meta = getSessionMeta(sessionId);
 
-  // ── CONFIRMATION INTERCEPT ──────────────────────────────────────────────
-  if (meta.pendingConfirmation) {
-    const { orderId, reason } = meta.pendingConfirmation;
-    const isYes = /\b(yes|yeah|yep|sure|confirm|ok|okay|proceed|do it|go ahead|yup)\b/i.test(userMessage);
-    const isNo  = /\b(no|nope|cancel|don't|stop|nevermind|never mind)\b/i.test(userMessage);
-
-    if (isYes) {
-      meta.pendingConfirmation = null;
-      const result = await executeTool('process_refund', { order_id: orderId, reason });
-      const order = mockOrders[orderId];
-      const responseText = result.success
-        ? `Done! I've processed a full refund of $${order?.price || ''} for your ${order?.item || 'order'} (Order #${orderId}). You should see it in your account within 2-3 business days.`
-        : `I wasn't able to process that refund. ${result.error}`;
-      history.push({ role: 'user', content: userMessage });
-      history.push({ role: 'assistant', content: responseText });
-      return {
-        response: responseText,
-        sentiment,
-        toolExecuted: 'process_refund',
-        toolStatus: result.success ? 'Success' : 'Failed',
-        escalated: false,
-        escalationReason: null
-      };
-    }
-
-    if (isNo) {
-      meta.pendingConfirmation = null;
-      const responseText = "No problem, I've cancelled the refund request. Is there anything else I can help you with?";
-      history.push({ role: 'user', content: userMessage });
-      history.push({ role: 'assistant', content: responseText });
-      return {
-        response: responseText,
-        sentiment,
-        toolExecuted: null,
-        toolStatus: null,
-        escalated: false,
-        escalationReason: null
-      };
-    }
-
-    // Unclear response — ask again
-    const responseText = `Just to confirm — would you like me to process a full refund for Order #${orderId}? Please reply yes or no.`;
-    history.push({ role: 'user', content: userMessage });
-    history.push({ role: 'assistant', content: responseText });
-    return {
-      response: responseText,
-      sentiment,
-      toolExecuted: null,
-      toolStatus: null,
-      escalated: false,
-      escalationReason: null
-    };
-  }
-  // ── END CONFIRMATION INTERCEPT ──────────────────────────────────────────
-
   // Append user message to history
   history.push({ role: 'user', content: userMessage });
   if (history.length > 12) history.shift();
@@ -156,6 +101,7 @@ async function processMessage(sessionId, userMessage) {
   let finalResponseText = '';
   let toolExecuted = null;
   let toolStatus = null;
+  let toolData = null;
   let escalated = false;
 
   // ── 1. REAL LLM MODE ────────────────────────────────────────────────────
@@ -212,25 +158,11 @@ async function processMessage(sessionId, userMessage) {
         const name = toolCall.function.name;
         const args = JSON.parse(toolCall.function.arguments);
 
-        // ── REFUND CONFIRMATION GATE ───────────────────────────────────────
-        // Intercept process_refund — ask for confirmation instead of executing
-        if (name === 'process_refund') {
-          meta.pendingConfirmation = {
-            orderId: args.order_id,
-            reason: args.reason || 'Customer requested refund'
-          };
-          const order = mockOrders[args.order_id];
-          const price = order ? `$${order.price}` : 'the full amount';
-          const item  = order ? order.item : `Order #${args.order_id}`;
-          finalResponseText = `Can you confirm you'd like a full refund of ${price} for your ${item} (Order #${args.order_id})?`;
-          toolExecuted = null; // not executed yet
-          toolStatus = null;
-
-        } else {
-          // ── ALL OTHER TOOLS: execute normally ──────────────────────────
+          // Execute tool normally
           toolExecuted = name;
           const result = await executeTool(name, args);
           toolStatus = result.success ? 'Success' : 'Failed';
+          if (result.data) toolData = result.data;
 
           if (result.escalated) escalated = true;
 
@@ -254,7 +186,6 @@ async function processMessage(sessionId, userMessage) {
           });
 
           finalResponseText = cleanResponse(finalCompletion.choices[0].message.content);
-        }
 
       } else {
         // ── NO TOOL CALL ──────────────────────────────────────────────────
@@ -275,6 +206,7 @@ async function processMessage(sessionId, userMessage) {
     finalResponseText = simulation.responseText;
     toolExecuted = simulation.toolExecuted;
     toolStatus = simulation.toolStatus;
+    if (simulation.toolData) toolData = simulation.toolData;
     escalated = simulation.escalated;
   }
 
@@ -306,14 +238,24 @@ async function processMessage(sessionId, userMessage) {
                          : explicitRequest    ? 'user_requested'
                          : null;
 
-  return {
+  let returnPayload = {
     response: finalResponseText,
     sentiment,
     toolExecuted,
     toolStatus,
+    toolData,
     escalated: shouldEscalate,
     escalationReason
   };
+
+  if (toolExecuted === 'request_refund_confirmation' && toolData) {
+    returnPayload.pendingConfirmation = {
+      orderId: toolData.order_id,
+      order: toolData
+    };
+  }
+
+  return returnPayload;
 }
 
 async function simulateLocalResponse(message, history) {
