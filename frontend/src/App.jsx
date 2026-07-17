@@ -11,7 +11,6 @@ const API_BASE = 'http://localhost:5000/api';
 
 const QUICK_REPLIES = [
   { label: 'Track Order' },
-  { label: 'Return Policy' },
   { label: 'Talk to Human' },
 ];
 
@@ -166,11 +165,18 @@ export default function App() {
     await callAPI(`[SYSTEM: User clicked Confirm Refund for order #${orderId}]`);
   };
 
-  const handleCancelRefund = async () => {
+  const handleCancelRefund = () => {
     if (!pendingConfirmation) return;
     const orderId = pendingConfirmation.orderId;
     setPendingConfirmation(null);
-    await callAPI(`[SYSTEM: User clicked Cancel Refund for order #${orderId}]`);
+    setMessages(prev => [
+      ...prev,
+      {
+        role: 'assistant',
+        content: `No problem — I've cancelled the refund request for Order #${orderId}. Is there anything else I can help you with?`,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      },
+    ]);
   };
 
   const handleKeyPress = (e) => {
@@ -187,7 +193,20 @@ export default function App() {
       ...prev,
       {
         role: 'assistant',
-        content: 'The support ticket has been marked as resolved by a specialist. Thank you for your patience — is there anything else I can help with?',
+        content: 'The support ticket has been marked as resolved. You can continue chatting with me — is there anything else I can help with?',
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      },
+    ]);
+  };
+
+  const handleReturnToAI = () => {
+    setEscalated(false);
+    setShowAgentDashboard(false);
+    setMessages(prev => [
+      ...prev,
+      {
+        role: 'assistant',
+        content: "You've been returned to AI support. How can I help you?",
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       },
     ]);
@@ -238,13 +257,20 @@ export default function App() {
           </h3>
           {escalated ? (
             <div>
-              <span className="text-sm font-bold text-[#D92D20] flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-[#D92D20]"></span>
+              <span className="text-sm font-bold flex items-center gap-2" style={{ color: 'var(--status-red-txt)' }}>
+                <span className="w-2 h-2 rounded-full animate-pulse" style={{ background: 'var(--status-red-txt)' }}></span>
                 ESCALATED
               </span>
               <p className="text-xs text-[var(--text-secondary)] mt-1 leading-snug">
                 Transferred to human agent.
               </p>
+              <button
+                onClick={handleReturnToAI}
+                className="mt-2 text-xs font-semibold px-2 py-1 rounded-lg border cursor-pointer transition-all"
+                style={{ background: 'var(--status-blue-bg)', color: 'var(--status-blue-txt)', borderColor: 'var(--status-blue-txt)' }}
+              >
+                ↩ Return to AI
+              </button>
             </div>
           ) : (
             <div>
@@ -307,23 +333,23 @@ export default function App() {
 
           <div className="claude-input-wrapper p-3 relative flex items-end min-h-[56px]">
             <textarea
-              disabled={loading || escalated || !!pendingConfirmation}
+              disabled={loading || !!pendingConfirmation}
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
               onKeyDown={handleKeyPress}
               placeholder={
-                escalated ? 'Chat escalated to human agent.' :
                 pendingConfirmation ? 'Please confirm action above.' :
+                escalated ? 'Chat continues — human agent is also monitoring.' :
                 'Reply to FlowBot...'
               }
               className="claude-input flex-1 resize-none h-[24px] max-h-[120px] text-sm py-0.5 leading-snug"
-              style={{ opacity: loading || escalated ? 0.5 : 1 }}
+              style={{ opacity: loading ? 0.5 : 1 }}
               rows={1}
             />
             <button
               className="claude-btn-primary ml-3 w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
               onClick={() => handleSendMessage()}
-              disabled={loading || escalated || !inputText.trim() || !!pendingConfirmation}
+              disabled={loading || !inputText.trim() || !!pendingConfirmation}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
                 <path d="M22 2L11 13M22 2L15 22L11 13M22 2L2 9L11 13" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />

@@ -1,13 +1,5 @@
 // Mock Database / State
 const mockOrders = {
-  "54321": {
-    order_id: "54321",
-    status: "In Transit",
-    item: "Wireless Headphones",
-    price: 99.99,
-    delivery_date: "2026-07-16",
-    carrier: "FedEx"
-  },
   "1042": {
     order_id: "1042",
     status: "Delivered",
@@ -15,6 +7,69 @@ const mockOrders = {
     price: 45.99,
     delivery_date: "2026-07-10",
     carrier: "UPS",
+    refunded: false
+  },
+  "54321": {
+    order_id: "54321",
+    status: "In Transit",
+    item: "Wireless Headphones",
+    price: 99.99,
+    delivery_date: "2026-07-20",
+    carrier: "FedEx",
+    refunded: false
+  },
+  "78903": {
+    order_id: "78903",
+    status: "Delivered",
+    item: "Running Shoes (Size 10)",
+    price: 134.50,
+    delivery_date: "2026-07-08",
+    carrier: "DHL",
+    refunded: false
+  },
+  "23456": {
+    order_id: "23456",
+    status: "Processing",
+    item: "Smart Watch Series X",
+    price: 299.00,
+    delivery_date: "2026-07-25",
+    carrier: "FedEx",
+    refunded: false
+  },
+  "67890": {
+    order_id: "67890",
+    status: "Delivered",
+    item: "Coffee Maker Deluxe",
+    price: 79.99,
+    delivery_date: "2026-07-05",
+    carrier: "UPS",
+    refunded: true
+  },
+  "11223": {
+    order_id: "11223",
+    status: "Out for Delivery",
+    item: "Mechanical Keyboard",
+    price: 159.00,
+    delivery_date: "2026-07-17",
+    carrier: "USPS",
+    refunded: false
+  },
+  "99887": {
+    order_id: "99887",
+    status: "Cancelled",
+    item: "Portable Bluetooth Speaker",
+    price: 59.95,
+    delivery_date: null,
+    carrier: "N/A",
+    refunded: true
+  },
+  "44501": {
+    order_id: "44501",
+    status: "In Transit",
+    item: "Ergonomic Office Chair",
+    price: 349.99,
+    delivery_date: "2026-07-22",
+    carrier: "DHL",
     refunded: false
   }
 };

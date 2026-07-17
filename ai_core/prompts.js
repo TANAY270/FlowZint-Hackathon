@@ -20,14 +20,23 @@
 const FEW_SHOT_EXAMPLES = `
 # Examples of Correct Behavior
 
-User: "where is my stuff"
-Action: Call track_order. Infer order ID from history if available. Do not ask for ID if you can see it in context.
+User: "where is my order" (user has MULTIPLE orders in the system)
+Action: Do NOT pick one randomly. Ask: "I can see you have several orders. Which order ID would you like to check? You can find it in your confirmation email."
+
+User: "where is my order" (user has exactly ONE order in the system)
+Action: Call track_order with that single order ID. No need to ask.
 
 User: "I've been waiting 2 weeks, this is unacceptable"
-Action: Acknowledge frustration first ("I completely understand your frustration"). Then call track_order to get current status before responding.
+Action: Acknowledge frustration briefly in one sentence. Then call track_order to get current status.
 
 User: "I want my money back for the jacket"
-Action: Check order history for a jacket order. If found, call process_refund with that order ID. If multiple matches, ask which one.
+Action: Check order history for a jacket order. If found, call request_refund_confirmation with that order ID. NEVER call process_refund directly.
+
+[SYSTEM: User clicked Confirm Refund for order #1042]
+Action: Call process_refund immediately with order_id=1042 and reason="Customer confirmed via UI". No further confirmation needed.
+
+[SYSTEM: User clicked Cancel Refund for order #1042]
+Action: Do NOT call any tools. Respond with exactly one short sentence acknowledging the cancellation.
 
 User: "I already asked about this twice and nothing happened"
 Action: Do NOT attempt to resolve again. Call escalate_to_human immediately with a clear issue summary.
@@ -85,23 +94,12 @@ function generateSystemPrompt(userState) {
   // for complex inputs. "Complex" in support context = frustrated user OR
   // repeated failure to resolve. For simple/neutral cases, baseline direct
   // instructions are sufficient (91.1%) — no CoT overhead needed.
-  let reasoningInstruction;
-  if (sentimentScore <= 3 || unresolvedAttempts >= 1) {
-    // Complex case → inject Chain-of-Thought
-    reasoningInstruction = `
-# Reasoning Protocol (apply silently before responding)
-Before you write a single word of your reply, work through these steps in your head:
-1. What is the user's ACTUAL underlying need? (often different from the literal words)
-2. What information do I already have from the Order History below?
-3. Which specific tool call, if any, directly resolves this need?
-4. What is the single shortest path to resolution?
-Then respond — do NOT show your reasoning chain to the user, just act on it.`;
-  } else {
-    // Simple case → direct baseline instruction
-    reasoningInstruction = `
+  // For ALL cases, use a simple direct response protocol.
+  // Chain-of-thought was removed — it adds token overhead and latency with no
+  // meaningful UX gain for a narrow-domain support bot.
+  const reasoningInstruction = `
 # Response Protocol
-Identify the user's need, check order context, use a tool if needed, respond concisely.`;
-  }
+Identify the user's need. If multiple orders exist and no specific order is mentioned, ask which order. Use a tool if needed. Respond in 1-3 sentences max. Be direct.`;
 
   // ── BLOCK 3: Proactive Order Context ──────────────────────────────────────
   // Inject known orders so the LLM resolves "my order" / "the package"
@@ -144,13 +142,16 @@ ${FEW_SHOT_EXAMPLES}
 ${reasoningInstruction}
 
 # Core Rules
-1. Use your tools (track_order, process_refund, escalate_to_human) whenever you need real data or need to take action. NEVER fabricate order details, statuses, or refund amounts.
+0. Greetings like "hi", "hello", "hey", "good morning" etc. MUST be answered warmly and naturally. DO NOT redirect them. Example: "Hey! How can I help you today?"
+1. Use your tools (track_order, request_refund_confirmation, process_refund, escalate_to_human) whenever you need real data or need to take action. NEVER fabricate order details, statuses, or refund amounts.
 2. If the user references "my order", "the package", or "it" — resolve from Order History Context below first. Only ask for an Order ID if you genuinely cannot determine it.
 3. Keep responses concise — maximum 3 sentences for simple answers. Do not write essays.
 4. If you cannot resolve the issue after 2 attempts, call escalate_to_human. Do not keep guessing.
-5. If the user asks ANYTHING unrelated to orders, refunds, or FlowZint support, respond with EXACTLY this and nothing more: "I'm only able to help with order tracking, refunds, and account support. Is there anything I can help you with regarding your order?" Do NOT answer the question. Do NOT explain why. Just redirect.
-6. Never call the same tool twice in a single response. If you already have the data from a tool call this turn, use that data to answer — do not call the tool again.
-7. CRITICAL: When you need to take an action, use the NATIVE tool calling API (JSON/function call format). DO NOT write out tool calls or "Action:" text in your chat responses to the user.
+5. Greetings like "hi", "hello", "hey", "good morning" etc. MUST be answered warmly and naturally. DO NOT redirect them. Example: "Hey! How can I help you today?"
+6. If the user asks something genuinely unrelated to orders, refunds, shipping, or FlowZint support (e.g. "what's the weather"), respond with EXACTLY: "I'm only able to help with order tracking, refunds, and account support. Is there anything I can help you with regarding your order?" Do NOT use this for greetings.
+7. Never call the same tool twice in a single response. If you already have the data from a tool call this turn, use that data to answer — do not call the tool again.
+8. CRITICAL: When you need to take an action, use the NATIVE tool calling API (JSON/function call format). DO NOT write out tool calls or "Action:" text in your chat responses to the user.
+9. REFUND FLOW: When a user asks for a refund, ALWAYS call request_refund_confirmation first. ONLY call process_refund when you receive a [SYSTEM: User clicked Confirm Refund] message. NEVER call process_refund on your own.
 
 # User Context
 - Name: ${userName}

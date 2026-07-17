@@ -94,6 +94,30 @@ async function processMessage(sessionId, userMessage) {
   const sentiment = calculateSentiment(userMessage);
   const meta = getSessionMeta(sessionId);
 
+  // ── GREETING INTERCEPT ─────────────────────────────────────────────────────
+  // Handle simple greetings deterministically — never let the LLM refuse them.
+  const isGreeting = /^\s*(hi+|hey+|hello+|howdy|good\s*(morning|afternoon|evening|day)|sup|yo|hiya|greetings)\s*[!.,?]?\s*$/i.test(userMessage);
+  if (isGreeting) {
+    const greetingReplies = [
+      "Hey there! 👋 How can I help you today? I can track your orders, process refunds, or connect you with a specialist.",
+      "Hello! Great to hear from you. What can I help you with — order tracking, a refund, or something else?",
+      "Hi! Welcome to FlowZint support. How can I assist you today?",
+    ];
+    const reply = greetingReplies[Math.floor(Math.random() * greetingReplies.length)];
+    history.push({ role: 'user', content: userMessage });
+    history.push({ role: 'assistant', content: reply });
+    return {
+      response: reply,
+      sentiment: Math.max(sentiment, 0.6),
+      toolExecuted: null,
+      toolStatus: null,
+      toolData: null,
+      escalated: false,
+      escalationReason: null
+    };
+  }
+  // ── END GREETING INTERCEPT ─────────────────────────────────────────────────
+
   // Append user message to history
   history.push({ role: 'user', content: userMessage });
   if (history.length > 12) history.shift();

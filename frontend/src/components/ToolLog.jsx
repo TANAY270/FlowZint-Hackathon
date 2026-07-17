@@ -2,20 +2,23 @@ import React from 'react';
 
 export default function ToolLog({ log }) {
   return (
-    <div className="text-xs p-2.5 rounded-lg glass-card flex flex-col gap-1 animate-fade-in-up">
-      <div className="flex justify-between items-center font-mono">
-        <span className="text-indigo-400 font-semibold">{log.tool}()</span>
+    <div className="p-2.5 rounded-xl claude-card flex flex-col gap-1 message-in">
+      <div className="flex justify-between items-start gap-2">
+        <span className="code-accent font-semibold break-all leading-tight" style={{ fontSize: '11px', fontFamily: 'monospace' }}>
+          {log.tool}()
+        </span>
         <span
-          className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
-            log.status === 'Success'
-              ? 'bg-emerald-500/10 text-emerald-400'
-              : 'bg-red-500/10 text-red-400'
-          }`}
+          className="shrink-0 px-1.5 py-0.5 rounded font-medium"
+          style={{
+            fontSize: '10px',
+            background: log.status === 'Success' ? 'var(--success-bg)' : 'var(--error-bg)',
+            color: log.status === 'Success' ? 'var(--success-txt)' : 'var(--error-txt)',
+          }}
         >
           {log.status}
         </span>
       </div>
-      <span className="text-[10px] text-slate-600">{log.timestamp}</span>
+      <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{log.timestamp}</span>
     </div>
   );
 }

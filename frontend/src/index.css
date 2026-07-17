@@ -1,56 +1,95 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 @import 'tailwindcss';
 
+/* ─── LIGHT MODE ─────────────────────────────────────────────────────────── */
 :root {
-  --bg-primary: #F0ECE0;
-  --bg-card: #FFFFFF;
-  --text-primary: #1A1A18;
-  --text-secondary: #6B6B6B;
-  --accent-orange: #C96442;
-  --border-light: #E5E3D8;
+  --bg-primary:      #F0ECE0;
+  --bg-card:         #FFFFFF;
+  --text-primary:    #111111;
+  --text-secondary:  #555555;
+  --accent:          #C96442;
+  --border-light:    #DDD9CC;
+
+  /* Status badge colours — light */
+  --status-green-bg:  #D1FAE5;
+  --status-green-txt: #065F46;
+  --status-amber-bg:  #FEF3C7;
+  --status-amber-txt: #92400E;
+  --status-red-bg:    #FEE2E2;
+  --status-red-txt:   #991B1B;
+  --status-blue-bg:   #DBEAFE;
+  --status-blue-txt:  #1E40AF;
+
+  /* Tool log / code accents — light */
+  --code-accent:      #7C3AED;
+  --success-bg:       #D1FAE5;
+  --success-txt:      #065F46;
+  --error-bg:         #FEE2E2;
+  --error-txt:        #991B1B;
 }
 
+/* ─── DARK MODE ──────────────────────────────────────────────────────────── */
 [data-theme='dark'] {
-  --bg-primary: #2B2A27;
-  --bg-card: #1F1E1B;
-  --text-primary: #EEEEEE;
-  --text-secondary: #A0A0A0;
-  --accent-orange: #C96442;
-  --border-light: #3D3C38;
+  --bg-primary:      #1A1917;
+  --bg-card:         #252422;
+  --text-primary:    #F0EDE6;
+  --text-secondary:  #9A9690;
+  --accent:          #E07A52;
+  --border-light:    #3A3835;
+
+  --status-green-bg:  rgba(16,185,129,0.12);
+  --status-green-txt: #34D399;
+  --status-amber-bg:  rgba(245,158,11,0.12);
+  --status-amber-txt: #FCD34D;
+  --status-red-bg:    rgba(239,68,68,0.12);
+  --status-red-txt:   #F87171;
+  --status-blue-bg:   rgba(99,102,241,0.12);
+  --status-blue-txt:  #A5B4FC;
+
+  --code-accent:      #A78BFA;
+  --success-bg:       rgba(16,185,129,0.12);
+  --success-txt:      #34D399;
+  --error-bg:         rgba(239,68,68,0.12);
+  --error-txt:        #F87171;
 }
 
-* {
-  box-sizing: border-box;
-}
+* { box-sizing: border-box; }
 
 body {
   margin: 0;
   font-family: "Times New Roman", Times, serif;
-  font-size: 125%;
+  font-size: 16px;
+  line-height: 1.65;
   background-color: var(--bg-primary);
   color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
 }
 
-/* Claude styling components */
+/* Ensure nothing is unreadably tiny */
+[class*="text-[10px]"], [class*="text-[9px]"], [class*="text-[11px]"] {
+  font-size: 12px !important;
+}
+[class*="text-xs"] { font-size: 13px !important; }
+[class*="text-sm"] { font-size: 14px !important; }
+
+/* ─── REUSABLE COMPONENTS ────────────────────────────────────────────────── */
 .claude-card {
   background-color: var(--bg-card);
   border: 1px solid var(--border-light);
-  border-radius: 12px;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+  border-radius: 14px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
 }
 
 .claude-input-wrapper {
   background-color: var(--bg-card);
   border: 1px solid var(--border-light);
-  border-radius: 12px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+  border-radius: 14px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.03);
   transition: border-color 0.2s, box-shadow 0.2s;
 }
-
 .claude-input-wrapper:focus-within {
-  border-color: var(--accent-orange);
-  box-shadow: 0 0 0 1px var(--accent-orange), 0 2px 4px rgba(0, 0, 0, 0.02);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(201,100,66,0.2);
 }
 
 .claude-input {
@@ -58,64 +97,60 @@ body {
   border: none;
   color: var(--text-primary);
   outline: none;
+  font-size: 14px;
 }
-
 .claude-input::placeholder {
   color: var(--text-secondary);
-  opacity: 0.7;
+  opacity: 0.8;
 }
 
 .claude-btn-primary {
-  background-color: var(--accent-orange);
+  background-color: var(--accent);
   color: #FFFFFF;
-  border-radius: 6px;
+  border-radius: 8px;
   transition: opacity 0.2s;
 }
-
-.claude-btn-primary:hover:not(:disabled) {
-  opacity: 0.9;
-}
-
-.claude-btn-primary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+.claude-btn-primary:hover:not(:disabled) { opacity: 0.88; }
+.claude-btn-primary:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .claude-btn-secondary {
   background-color: transparent;
   color: var(--text-secondary);
   border: 1px solid var(--border-light);
-  border-radius: 6px;
+  border-radius: 8px;
   transition: background-color 0.2s, color 0.2s;
 }
-
 .claude-btn-secondary:hover {
-  background-color: rgba(0, 0, 0, 0.03);
+  background-color: var(--border-light);
   color: var(--text-primary);
 }
 
-/* Scrollbar */
-::-webkit-scrollbar { width: 6px; }
+/* Status badge helper */
+.badge-green  { background: var(--status-green-bg); color: var(--status-green-txt); }
+.badge-amber  { background: var(--status-amber-bg); color: var(--status-amber-txt); }
+.badge-red    { background: var(--status-red-bg);   color: var(--status-red-txt);   }
+.badge-blue   { background: var(--status-blue-bg);  color: var(--status-blue-txt);  }
+
+/* Code / tool accent */
+.code-accent  { color: var(--code-accent); }
+.success-pill { background: var(--success-bg); color: var(--success-txt); }
+.error-pill   { background: var(--error-bg);   color: var(--error-txt);   }
+
+/* ─── SCROLLBAR ──────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.1); border-radius: 6px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(0, 0, 0, 0.2); }
+::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 6px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-secondary); }
 
-/* Message Animations */
+/* ─── ANIMATIONS ─────────────────────────────────────────────────────────── */
 @keyframes fade-in-up {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
-
-.message-in {
-  animation: fade-in-up 0.3s ease-out forwards;
-}
+.message-in { animation: fade-in-up 0.28s ease-out forwards; }
 
 @keyframes spin-slow {
   from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  to   { transform: rotate(360deg); }
 }
-
-.spinner {
-  animation: spin-slow 1.5s linear infinite;
-}
-
+.spinner { animation: spin-slow 1.5s linear infinite; }
