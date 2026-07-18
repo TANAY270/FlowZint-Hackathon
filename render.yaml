@@ -1,0 +1,24 @@
+services:
+  # Backend API
+  - type: web
+    name: flowzint-backend
+    env: node
+    buildCommand: npm install
+    startCommand: npm start
+    rootDir: backend
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: GROQ_API_KEY
+        sync: false # Requires manual setup in Render dashboard
+
+  # Frontend Vite App
+  - type: web
+    name: flowzint-frontend
+    env: static
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    rootDir: frontend
+    envVars:
+      - key: VITE_API_URL
+        value: https://flowzint-backend.onrender.com # Change this if backend name is different
